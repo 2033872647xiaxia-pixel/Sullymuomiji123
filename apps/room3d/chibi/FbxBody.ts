@@ -114,6 +114,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         const map=keep(new T.CanvasTexture(canvas));map.colorSpace=T.SRGBColorSpace;return map;
     };
     const frontCloth=keep(new T.MeshStandardMaterial({map:appearance==='outfit'?garmentMap(false):makeTexture([],skin),roughness:1}));
+    frontCloth.userData.illustrationCast=true;
     const faceKeys=appearance==='outfit'&&!blank?['facemark','eyes','mouth','outfit','faceDecor']:['facemark','eyes','mouth','faceDecor'];
     const front=keep(new T.MeshStandardMaterial({map:makeTexture(faceKeys,skin),roughness:1}));
     front.userData.illustrationFace=true;
@@ -154,6 +155,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         front.map=canBlink&&time%4.3>4.12?asleepMap:awakeMap;
     };
     const back=keep(new T.MeshStandardMaterial({color:skin,roughness:1}));
+    back.userData.illustrationSkin=true;
     const backCloth=keep(new T.MeshStandardMaterial({map:appearance==='outfit'?garmentMap(true):makeTexture([],skin),roughness:1}));
     const root=new T.Group(), body=new T.Group();root.add(body);
     const hairPivot=new T.Group();hairPivot.position.y=.64;body.add(hairPivot);
@@ -235,6 +237,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const actionLimbs:Array<{mesh:T.Mesh;side:number;foot:boolean}>=[];
     const ballGeometry=keep(new T.SphereGeometry(.105,16,12));
     const handMaterial=keep(new T.MeshStandardMaterial({color:skin,roughness:1}));
+    handMaterial.userData.illustrationSkin=true;
     for(const side of [-1,1]){
         const shoeCanvas=frontCloth.map?.image as HTMLCanvasElement|undefined;
         let shoeColor=skin;
@@ -271,6 +274,8 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
                 geometry.computeVertexNormals();
                 const face=keep(new T.MeshStandardMaterial({map:makeTexture(keys),alphaTest:.2,side:T.DoubleSide,roughness:1}));
                 const rim=keep(new T.MeshStandardMaterial({color:average(image),side:T.DoubleSide,roughness:1}));
+                // 前发参与屏幕空间落影（投在脸上）；后发在头后，投出来会盖住脸，不参与。
+                if(!rear){face.userData.illustrationCast=true;rim.userData.illustrationCast=true;}
                 const sheet=new T.Mesh(geometry,[face,rim]);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.userData.hairConstruction='paired-sheets';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
                 return;
             }
@@ -296,6 +301,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
             // Keep the new authored back-hair strands and shading. The inner
             // liner still uses an average color to avoid mirrored texture seams.
             const material=keep(new T.MeshStandardMaterial({map,alphaTest:.2,side:T.DoubleSide,roughness:1}));
+            if(!rear)material.userData.illustrationCast=true;
             const sheet=new T.Mesh(geometry,material);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
             if(solidRear&&!full){
                 const contours=parts[keys[0]]?contoursFor(parts[keys[0]]):[];
