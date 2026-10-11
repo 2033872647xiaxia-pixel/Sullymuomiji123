@@ -47,7 +47,7 @@ export function createRoomFinishes(cel=null){
   if(formula){m.onBeforeCompile=shader=>{
    shader.vertexShader='varying vec2 vFinishUV;\n'+shader.vertexShader.replace('#include <uv_vertex>','#include <uv_vertex>\nvFinishUV=uv;');
    shader.uniforms.finishTrim={value:new T.Color(trim)};
-   shader.fragmentShader='uniform vec3 finishTrim;\nvarying vec2 vFinishUV;\n'+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>\nfloat shade=0.;${formula}\ndiffuseColor.rgb=mix(diffuseColor.rgb,shade>=0.?vec3(1.):vec3(0.),abs(shade));`);
+   shader.fragmentShader='uniform vec3 finishTrim;\nvarying vec2 vFinishUV;\n'+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>\n{float shade=0.;${formula}\ndiffuseColor.rgb=mix(diffuseColor.rgb,shade>=0.?vec3(1.):vec3(0.),abs(shade));}`);
   };m.customProgramCacheKey=()=>kind+'/'+style;}
   if(cel)applyToonEnvironment(m,cel.lightUniforms);
   materials.set(key,m);return m;

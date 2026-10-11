@@ -39,10 +39,12 @@ export function applyRetroFurniture(material,lightUniforms) {
 // Full-scene toon mode: reuse the cel shading above on walls/floors, and keep
 // chaining on top of an existing onBeforeCompile (finish patterns inject into
 // diffuseColor; cel shading replaces the outgoing light, so both coexist).
-export function applyToonEnvironment(material,lightUniforms) {
+// Bind the captured handlers: the inherited Material.customProgramCacheKey
+// reads this.onBeforeCompile, and calling it unbound would crash at render time.
+export function applyToonEnvironment(material, lightUniforms) {
   if (!material.isMeshStandardMaterial) return;
-  const previousCompile = material.onBeforeCompile;
-  const previousKey = material.customProgramCacheKey;
+  const previousCompile = material.onBeforeCompile?.bind(material);
+  const previousKey = material.customProgramCacheKey?.bind(material);
   applyRetroFurniture(material, lightUniforms);
   const celCompile = material.onBeforeCompile;
   const celKey = material.customProgramCacheKey;
