@@ -18,6 +18,7 @@ import {hairContours,createHairShell} from './hairShell';
 import {createHairSeam} from './hairSeam';
 import {createRearHairLiner,simplifyLinerContours} from './rearHairLiner';
 import {cleanFace,loadFaceImages,composeFace,type FaceSettings} from './faceAppearance';
+import {makeFaceSdf} from './faceSdf';
 
 const contourCache=new WeakMap<PartSurface,ReturnType<typeof hairContours>>();
 const hairColorCache=new WeakMap<PartSurface,WeakMap<PartSurface,(x:number,y:number)=>T.Color>>();
@@ -118,6 +119,9 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const faceKeys=appearance==='outfit'&&!blank?['facemark','eyes','mouth','outfit','faceDecor']:['facemark','eyes','mouth','faceDecor'];
     const front=keep(new T.MeshStandardMaterial({map:makeTexture(faceKeys,skin),roughness:1}));
     front.userData.illustrationFace=true;
+    // 前发 SDF：卡通画风的脸部阴影贴图，随部件形状逐角色生成；无前发则留空回落屏幕落影。
+    const faceSdf=makeFaceSdf(parts.fronthair as HTMLImageElement|HTMLCanvasElement|undefined,blank?16:0);
+    if(faceSdf){keep(faceSdf);front.userData.faceSdf=faceSdf;}
     const awakeMap=front.map;
     const asleepMap=makeTexture(faceKeys,skin,'sleep');
     const cuteMap=makeTexture(faceKeys,skin,'squeeze');

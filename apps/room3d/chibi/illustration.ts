@@ -13,6 +13,8 @@ const originals = new WeakMap<T.MeshStandardMaterial, {
 type RoomLightUniforms = {roomShadeTint:{value:T.Color};roomSunTint:{value:T.Color};roomBrightness:{value:number};roomSunContrast:{value:number}};
 const roomTints = new WeakMap<T.MeshStandardMaterial, {value:T.Color}>();
 const roomLights = new WeakMap<T.MeshStandardMaterial, {enabled:{value:number}; uniforms:RoomLightUniforms; cel:{value:number}}>();
+// 主光方向（视野空间，表面→光），脸部 SDF 阴影的横向扫动阈值用；由家园编辑器每帧刷新。
+export const characterLightDirection={value:new T.Vector3(0,0,1)};
 
 export function setCharacterRoomLighting(root:T.Object3D,uniforms:RoomLightUniforms,cel=false){
  root.traverse(object=>{
@@ -63,6 +65,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
         originals.set(material,saved);
         const roomTint={value:new T.Color('#ffffff')};roomTints.set(material,roomTint);
         const room={enabled:{value:0},uniforms:{roomShadeTint:{value:new T.Color('#ffffff')},roomSunTint:{value:new T.Color('#ffffff')},roomBrightness:{value:1},roomSunContrast:{value:0}},cel:{value:0}};roomLights.set(material,room);
+        const faceSdf = material.userData.faceSdf as T.Texture | undefined;
         material.toneMapped = false;
         material.onBeforeCompile = (shader,renderer) => {
           saved.compile.call(material,shader,renderer);
@@ -73,8 +76,9 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
           shader.uniforms.dropShadowScreen=dropShadowUniforms.screen;
           shader.uniforms.dropShadowDrop=dropShadowUniforms.drop;
           shader.uniforms.dropShadowEnabled=dropShadowUniforms.enabled;
+          if(faceSdf){shader.uniforms.faceSdfMap={value:faceSdf};shader.uniforms.characterLightDirection=characterLightDirection;}
           Object.assign(shader.uniforms,room.uniforms);
-          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\n'+shader.fragmentShader;
+          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\nuniform vec3 characterLightDirection;\n':'')+'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\n'+shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace(
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `
@@ -102,9 +106,19 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
               + ${material.userData.illustrationFace ? '.05' : '.06'} * smoothstep(.88,1.02,inkEnergy);
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
-            ${material.userData.illustrationFace || material.userData.illustrationSkin ? `
+            ${material.userData.faceSdf ? `
+            // 脸部 SDF 阴影：距离场由前发部件生成（FbxBody / faceSdf.ts），边界跟随
+            // 刘海下缘。阈值随主光横向扫动偏移——光从哪边来，影带向对侧加深；
+            // 刘海覆盖区内（含透视缝隙）场值为负，任何阈值下都是影。
+            float faceField = texture2D(faceSdfMap, vMapUv).r * 2.0 - 1.0;
+            vec3 faceRight = normalize(cross(vec3(0.,1.,0.), normal));
+            float faceSweep = clamp(dot(characterLightDirection, faceRight), -1., 1.);
+            float faceCut = 0.06 + 0.55 * faceSweep * (0.5 - vMapUv.x);
+            float faceAa = max(fwidth(faceField) * 1.5, 0.02);
+            float faceShadow = (1.0 - smoothstep(faceCut - faceAa, faceCut + faceAa, faceField)) * characterCel;
+            inkRoomShade = mix(inkRoomShade, .80, faceShadow);` : material.userData.illustrationFace || material.userData.illustrationSkin ? `
             // 屏幕空间落影（前发/衣片 → 脸与皮肤）：按主光方向偏移采样剪影蒙版，
-            // 命中处直接压进阴影档，颜色随下方的偏色一起换。
+            // 命中处直接压进阴影档，颜色随下方的偏色一起换。无 SDF 的脸部走这条兜底。
             float dropMask = dropShadowEnabled > .5
               ? smoothstep(.35,.65,texture2D(dropShadowMask,(gl_FragCoord.xy/dropShadowScreen)+dropShadowDrop).a)
               : 0.0;
@@ -123,7 +137,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v3-' + (material.userData.illustrationFace ? 'face' : material.userData.illustrationSkin ? 'skin' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v3-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
