@@ -75,6 +75,7 @@ export function mountPetSystem({host,scene,home,catalog,templates,actors,contact
   if(e.target===overlay){close();return;}const b=e.target.closest('button');if(!b)return;const action=b.dataset.petAction,p=life.data.pets.find(p=>p.id===selected);
   if(action==='remove'&&p){removeConfirm=p.id;error='';navigate();overlay.querySelector('[data-pet-action="cancel-remove"]')?.focus();return;}
   if(action==='cancel-remove'){removeConfirm=null;navigate();return;}
+  if(action==='edit-name'){detailTab='look';error='';navigate();const input=overlay.querySelector('[data-pet-name]');input?.focus();input?.select();return;}
   if(action==='confirm-remove'){
    if(!p||removeConfirm!==p.id)return;
    try{

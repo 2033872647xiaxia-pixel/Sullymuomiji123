@@ -2,8 +2,9 @@
  * CharApiHubModal — 角色级 API 配置聚合面板（聊天加号菜单「API 配置」入口）。
  *
  * 三块内容：
- *  1. 聊天主 API：该角色独立的主模型（chatApiOverride）。不同角色适合不同模型，
- *     这里选了就覆盖全局默认；选「跟随全局默认」= 清掉覆盖。
+ *  1. 聊天主 API：该角色独立的主模型（dialogueApi，主回复/主动消息凭据走它；同时镜像写
+ *     chatApiOverride 供旧主动消息路径）。不同角色适合不同模型，这里选了就覆盖全局默认；
+ *     选「跟随全局默认」= 清掉覆盖。
  *  2. 热点阅读：READ_NEWS 全文阅读时是否把网页配图喂给 AI（hotNewsImagesToAI），
  *     模型不识图就关着，防止 image 段直接报错。
  *  3. 副 API 便捷聚合：主动消息副 API（proactiveConfig.secondaryApi）与情绪评估
@@ -39,8 +40,9 @@ const SectionTitle: React.FC<{ label: string; sub?: string }> = ({ label, sub })
 );
 
 const CharApiHubModal: React.FC<CharApiHubModalProps> = ({ isOpen, onClose, char, apiConfig, onSave }) => {
-    // 主 API 覆盖（null = 跟随全局）
-    const [mainApi, setMainApi] = useState<ApiTriple | null>(char.chatApiOverride?.baseUrl ? char.chatApiOverride : null);
+    // 主 API 覆盖（null = 跟随全局）。dialogueApi 是现行字段；老存档可能只有 chatApiOverride，读出来兜底展示，保存时一并迁移。
+    const legacyMainApi = char.chatApiOverride?.baseUrl ? char.chatApiOverride : null;
+    const [mainApi, setMainApi] = useState<ApiTriple | null>(char.dialogueApi?.baseUrl ? char.dialogueApi : legacyMainApi);
     // 热点图片喂 AI
     const [newsImgToAI, setNewsImgToAI] = useState(!!char.hotNewsImagesToAI);
     // 主动消息副 API
@@ -53,7 +55,7 @@ const CharApiHubModal: React.FC<CharApiHubModalProps> = ({ isOpen, onClose, char
 
     useEffect(() => {
         if (!isOpen) return;
-        setMainApi(char.chatApiOverride?.baseUrl ? char.chatApiOverride : null);
+        setMainApi(char.dialogueApi?.baseUrl ? char.dialogueApi : (char.chatApiOverride?.baseUrl ? char.chatApiOverride : null));
         setNewsImgToAI(!!char.hotNewsImagesToAI);
         setProUseSec(!!char.proactiveConfig?.useSecondaryApi);
         setProSecApi(char.proactiveConfig?.secondaryApi ?? null);
@@ -65,8 +67,10 @@ const CharApiHubModal: React.FC<CharApiHubModalProps> = ({ isOpen, onClose, char
     const mainSub = mainApi?.baseUrl ? `${mainApi.model} · ${hostOf(mainApi.baseUrl)}` : followSub;
 
     const handleSave = () => {
+        const mainSnapshot = mainApi?.baseUrl ? { ...mainApi } : undefined;
         const patch: Partial<CharacterProfile> = {
-            chatApiOverride: mainApi?.baseUrl ? { ...mainApi } : undefined,
+            dialogueApi: mainSnapshot,
+            chatApiOverride: mainSnapshot,
             hotNewsImagesToAI: newsImgToAI,
             jobHuntApiOverride: jobApi?.baseUrl ? { ...jobApi } : undefined,
         };
