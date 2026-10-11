@@ -1,3 +1,4 @@
+import { handleLocalBack } from '../utils/localBackHandlers';
 import {isHomeAssetDisposal,isHomeLeaveCancellation} from '../utils/homeAssetCancellation';
 import { processHomeMemoryAfterSave } from '../utils/homeMemoryPostHook';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
@@ -6233,6 +6234,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const handleBack = useCallback(() => {
+      // 本地面板（美化目录/装扮编辑等 useLocalBackHandler 注册的浮层）优先于 App 自己的返回栈
+      if (handleLocalBack()) return;
       // 栈顶（最后注册的，一般是叠在最上面的子视图）先消费
       for (let i = backHandlerStackRef.current.length - 1; i >= 0; i--) {
           try {

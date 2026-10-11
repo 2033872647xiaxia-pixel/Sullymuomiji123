@@ -3285,6 +3285,8 @@ export interface CharacterProfile {
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];
+  /** 默认隐藏 ChatApp 的按月 RECALL 指令提示；false 恢复提示，不禁用指令解析。 */
+  hideMonthlyRecallPrompt?: boolean;
   
   writerPersona?: string;
   writerPersonaGeneratedAt?: number;

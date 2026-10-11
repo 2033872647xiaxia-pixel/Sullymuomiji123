@@ -603,6 +603,9 @@ const GuidebookApp: React.FC = () => {
 
     // Setup State
     const [selectedCharId, setSelectedCharId] = useState('');
+    useAppShortcut(ShortcutAppID.Guidebook, intent => {
+        setSelectedCharId(intent.characterId || ''); setView(intent.characterId ? 'setup' : 'lobby');
+    });
     const [initialAffinity, setInitialAffinity] = useState(50);
     const [maxRounds, setMaxRounds] = useState(5);
     const [scenarioHint, setScenarioHint] = useState('');
@@ -1917,3 +1920,5 @@ const GuidebookApp: React.FC = () => {
 };
 
 export default GuidebookApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

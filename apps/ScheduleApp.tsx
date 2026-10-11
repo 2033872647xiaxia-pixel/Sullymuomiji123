@@ -187,6 +187,9 @@ const ScheduleApp: React.FC = () => {
     const [tasks, setTasks] = useState<TaskV2[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
     const [activeTab, setActiveTab] = useState<'quest' | 'events'>('quest');
+    useAppShortcut(ShortcutAppID.Schedule, intent => setActiveTab(intent.entryId === 'server_events' ? 'events' : 'quest'));
+
+    // Processing State for feedback
     const [processingTaskIds, setProcessingTaskIds] = useState<Set<string>>(new Set());
     const [currentThemeMode, setCurrentThemeMode] = useState<ThemeMode>('cyber');
     const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -1312,3 +1315,5 @@ const TaskDetail: React.FC<{
 };
 
 export default ScheduleApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

@@ -1,3 +1,4 @@
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {MEETING_APPEARANCES} from '../../utils/meetingAppearance';
 import CssCodeEditor from './CssCodeEditor';
 import AvatarFrameImageEditor from './AvatarFrameImageEditor';
@@ -38,6 +39,17 @@ export default function DecorationDraftEditor({outfits=[],onOutfitsChange,preset
  const [query,setQuery]=useState('');const [page,setPage]=useState(0);
  const [update,setUpdate]=useState(!!originalKey&&['self','remix'].includes(origin.kind));const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
  const combinedOrigin=useMemo(()=>combineDecorationOrigins(Object.values(origins)),[origins]);
+ useLocalBackHandler(()=>{
+   if(busy)return true;
+   if(editCurrentPsyche)setEditCurrentPsyche(false);
+   else if(saveOpen)setSaveOpen(false);
+   else if(layoutOpen)setLayoutOpen(false);
+   else if(outfitOpen)setOutfitOpen(false);
+   else if(sideOpen)setSideOpen(false);
+   else if(shelf)setShelf(null);
+   else onClose();
+   return true;
+ }, 30);
  const locked=!canEditDecoration(combinedOrigin);
  const backgroundBlock=/\/\* sully-composer:background \*\/\n?([\s\S]*?)\/\* end-sully-composer:background \*\//;
  const categoryCss=workshopCss(draft,category);

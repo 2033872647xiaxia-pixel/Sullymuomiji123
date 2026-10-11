@@ -260,6 +260,10 @@ const MusicApp: React.FC = () => {
       [view === 'artist', () => setView(artistFrom)],
       [view !== 'profile', () => setView('profile')],
   ]);
+  useAppShortcut(ShortcutAppID.Music, intent => {
+    setVisitCharId(intent.characterId || null);
+    setView(intent.entryId === 'visit_char' ? (intent.characterId ? 'visit_char' : 'profile') : (intent.entryId || 'profile') as View);
+  });
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState<Song[]>([]);
   const [searching, setSearching] = useState(false);
@@ -1291,3 +1295,5 @@ const MusicApp: React.FC = () => {
 };
 
 export default MusicApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

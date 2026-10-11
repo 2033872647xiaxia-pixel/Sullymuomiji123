@@ -1,6 +1,6 @@
 import { readLocalCursor } from './localRead';
 import { reportDatabaseFailure } from './databaseHealth';
-import { recordDatabaseOpen } from './databaseOpenDiagnostics';
+import { associateDatabaseOpen, beginDatabaseOpen, recordDatabaseOpen } from './databaseOpenDiagnostics';
 import {migrateLegacyWhiteboxPresets} from './legacyWhiteboxPresets';
 import {restoreDecorationMedia} from './decorationMediaBackup';
 import {exportBeautyPreferences,importBeautyPreferences} from './beautyPreferencesBackup';
@@ -167,7 +167,8 @@ export const openDB = (): Promise<IDBDatabase> => {
   if (dbPromise) return dbPromise;
 
   const promise = new Promise<IDBDatabase>((resolve, reject) => {
-    recordDatabaseOpen('open-requested', { requestedVersion: DB_VERSION });
+    const diagnosticRequest = beginDatabaseOpen(DB_VERSION);
+    const openVersions = { requestedVersion: DB_VERSION, requestId: diagnosticRequest };
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     // onblocked 不是终态: 它先 reject, 但底层 open request 还活着, 等占用方关闭后仍会
     // 触发 onsuccess。用 settled 标记 promise 已 settle, 让那条迟到的连接被 close 掉而
@@ -176,7 +177,7 @@ export const openDB = (): Promise<IDBDatabase> => {
     // 重开并缓存了新 promise, 陈旧连接的回调不能误清新单例 (否则又凭空多开一条连接)。
     let settled = false;
     const openTimer = setTimeout(() => {
-        recordDatabaseOpen('open-timeout', { requestedVersion: DB_VERSION });
+        recordDatabaseOpen('open-timeout', openVersions);
         settled = true;
         if (dbPromise === promise) dbPromise = null;
         reject(new Error('本地数据库连接超时，请关闭其他糯米机页面后重试；无需清理数据'));
@@ -193,7 +194,7 @@ export const openDB = (): Promise<IDBDatabase> => {
         // 只是当前 schema 的超集, 不带版本号打开就能连到现有版本、读写完全兼容,
         // 不需要也不能降级建表。所以这里回退到「不带版本号 open」一次而不是报死。
         if (err?.name === 'VersionError') {
-            recordDatabaseOpen('versionless-fallback', { requestedVersion: DB_VERSION });
+            recordDatabaseOpen('versionless-fallback', openVersions, err);
             console.warn('[DB] open VersionError —— 现有版本高于当前 build, 回退到不带版本号打开');
             // Keep the timeout active until the versionless request settles.
             // 原 request 已终结 (VersionError 后不会再 onsuccess)，由 fallback 负责结算。
@@ -202,13 +203,16 @@ export const openDB = (): Promise<IDBDatabase> => {
                 const db = fb.result;
                 if (settled) { db.close(); return; }
                 clearTimeout(openTimer);
-                recordDatabaseOpen('open-ready', { requestedVersion: DB_VERSION, actualVersion: db.version });
+                associateDatabaseOpen(db, diagnosticRequest, DB_VERSION);
+                recordDatabaseOpen('open-ready', { ...openVersions, actualVersion: db.version });
                 // 与正常路径一致地挂上失效自愈回调 (另一 tab 升级 / 浏览器强关连接)。
                 db.onversionchange = () => {
+                    recordDatabaseOpen('version-change', { ...openVersions, actualVersion: db.version });
                     db.close();
                     if (dbPromise === promise) dbPromise = null;
                 };
                 db.onclose = () => {
+                    recordDatabaseOpen('connection-closed', { ...openVersions, actualVersion: db.version });
                     if (dbPromise === promise) dbPromise = null;
                 };
                 resolve(db);
@@ -216,7 +220,7 @@ export const openDB = (): Promise<IDBDatabase> => {
             fb.onerror = () => {
                 if (settled) return;
                 clearTimeout(openTimer);
-                recordDatabaseOpen('open-error', { requestedVersion: DB_VERSION });
+                recordDatabaseOpen('open-error', openVersions, fb.error);
                 settled = true;
                 console.error("DB Open Error (versionless fallback):", fb.error);
                 if (dbPromise === promise) dbPromise = null;
@@ -225,7 +229,7 @@ export const openDB = (): Promise<IDBDatabase> => {
             return;
         }
         clearTimeout(openTimer);
-        recordDatabaseOpen('open-error', { requestedVersion: DB_VERSION });
+        recordDatabaseOpen('open-error', openVersions, err);
         console.error("DB Open Error:", err);
         if (dbPromise === promise) dbPromise = null; // 打开失败别把 rejected promise 缓存住
         settled = true;
@@ -241,11 +245,12 @@ export const openDB = (): Promise<IDBDatabase> => {
             try { db.close(); } catch { /* ignore */ }
             return;
         }
-        recordDatabaseOpen('open-ready', { requestedVersion: DB_VERSION, actualVersion: db.version });
+        associateDatabaseOpen(db, diagnosticRequest, DB_VERSION);
+        recordDatabaseOpen('open-ready', { ...openVersions, actualVersion: db.version });
         // 另一个 tab 触发版本升级时必须主动 close 让位, 否则对方 open 会被 block;
         // 顺手清缓存, 下次 openDB 重开到新版本。
         db.onversionchange = () => {
-            recordDatabaseOpen('version-change', { requestedVersion: DB_VERSION, actualVersion: db.version });
+            recordDatabaseOpen('version-change', { ...openVersions, actualVersion: db.version });
             db.close();
             if (dbPromise === promise) dbPromise = null;
         };
@@ -260,7 +265,7 @@ export const openDB = (): Promise<IDBDatabase> => {
         // 的竞态会让 push 静默丢失 → 主线程超时, 所以那边 (worker/sw-keep-alive.ts 的
         // withInboxTx) 单独补了「InvalidStateError 清缓存重开一次」的事务级兜底。
         db.onclose = () => {
-            recordDatabaseOpen('connection-closed', { requestedVersion: DB_VERSION, actualVersion: db.version });
+            recordDatabaseOpen('connection-closed', { ...openVersions, actualVersion: db.version });
             if (dbPromise === promise) dbPromise = null;
         };
         resolve(db);
@@ -268,7 +273,7 @@ export const openDB = (): Promise<IDBDatabase> => {
 
     request.onblocked = () => {
         clearTimeout(openTimer);
-        recordDatabaseOpen('open-blocked', { requestedVersion: DB_VERSION });
+        recordDatabaseOpen('open-blocked', openVersions);
         // 另一个 tab 仍持有旧版本连接, 升级被挡。清缓存 + reject, 别让调用方无限挂着;
         // 与 activeMsgStore / sw-keep-alive 的 openDB 一致, 对方 tab 关闭后下次调用可重试。
         console.warn('[DB] open blocked —— 另一个 tab 仍持有旧版本连接未关闭');
@@ -281,10 +286,11 @@ export const openDB = (): Promise<IDBDatabase> => {
       // A legitimate schema migration may be slow; never cancel it halfway.
       clearTimeout(openTimer);
       const db = (event.target as IDBOpenDBRequest).result;
-      const upgradeVersions = { requestedVersion: DB_VERSION, fromVersion: event.oldVersion, actualVersion: db.version };
+      const upgradeVersions = { ...openVersions, fromVersion: event.oldVersion, actualVersion: db.version };
       recordDatabaseOpen('upgrade-started', upgradeVersions);
-      request.transaction!.addEventListener('complete', () => recordDatabaseOpen('upgrade-committed', upgradeVersions));
-      request.transaction!.addEventListener('abort', () => recordDatabaseOpen('upgrade-aborted', upgradeVersions));
+      const upgradeTransaction = request.transaction!;
+      upgradeTransaction.addEventListener('complete', () => recordDatabaseOpen('upgrade-committed', upgradeVersions));
+      upgradeTransaction.addEventListener('abort', () => recordDatabaseOpen('upgrade-aborted', upgradeVersions, upgradeTransaction.error));
 
       const createStore = (name: string, options?: IDBObjectStoreParameters) => {
           if (!db.objectStoreNames.contains(name)) {

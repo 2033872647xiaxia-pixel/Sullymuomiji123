@@ -764,14 +764,16 @@ export const useChatAI = ({
         try {
             // Keep the Service Worker alive while we make potentially long AI calls
             // 放 try 内：若抛错，finally 仍会派发 replyEnd 清横幅，避免卡 6 分钟 TTL
+            // Include SW readiness in send→API timing; it can be the first request's wait.
+            const perfSendT0 = performance.now();
             // 初始化失败也必须经过 finally 释放本轮占位。
             await replyStep(async () => KeepAlive.start());
+            const keepAliveMs = Math.round(performance.now() - perfSendT0);
             const baseUrl = effectiveApi.baseUrl.replace(/\/+$/, '');
             const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` };
 
             // ── 分段计时（从用户发送到 API 发出）──
-            const perfSendT0 = performance.now();
-            const perfStages: Record<string, number> = {};
+            const perfStages: Record<string, number> = { keepAlive: keepAliveMs };
             const stageT = async <T>(label: string, p: Promise<T>): Promise<T> => {
                 const t0 = performance.now();
                 try { return await replyStep(async () => p); }

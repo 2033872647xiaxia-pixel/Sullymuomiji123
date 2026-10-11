@@ -1605,6 +1605,25 @@ export default function MemoryPalaceApp() {
         setSelectedRoom(null);
         setSelectedNode(null);
     };
+    useAppShortcut(ShortcutAppID.MemoryPalace, (intent, isCurrent) => {
+        setSelectedRoom(null); setSelectedNode(null); setShowCharPicker(false);
+        if (intent.entryId === 'globalSettings') { setView('globalSettings'); return; }
+        const target = characters.find(c => c.id === intent.characterId);
+        if (!target) { setView('picker'); return; }
+        setActiveCharacterId(target.id);
+        if (intent.entryId === 'all' || intent.entryId === 'boxes') {
+            setAllNodes([]); setAllBoxes([]); setExpandedBoxId(null); setBoxMembers({});
+            setView(intent.entryId);
+            const load = async () => {
+                if (intent.entryId === 'all') {
+                    const items = await MemoryNodeDB.getByCharId(target.id); if (isCurrent()) setAllNodes(items);
+                } else {
+                    const items = await EventBoxDB.getByCharId(target.id); if (isCurrent()) setAllBoxes(items.sort((a, b) => b.updatedAt - a.updatedAt));
+                }
+            };
+            void load().catch(() => { if (isCurrent()) addToast('记忆读取失败，请重试', 'error'); });
+        } else setView(intent.entryId === 'pixelHome' ? 'pixelHome' : intent.entryId === 'settings' ? 'settings' : 'palace');
+    });
 
     // 切换"记忆宫殿"总开关（picker 卡片上）
     const handleTogglePalaceFromPicker = (charId: string, on: boolean) => {
@@ -6504,3 +6523,5 @@ create table if not exists memory_vectors (
 
     return null;
 }
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

@@ -1,6 +1,7 @@
 import {trackBeauty} from '../../utils/beautyAnalytics';
 import {readRememberedBeautyAuthor,rememberBeautyAuthor,forgetBeautyAuthor} from '../../utils/beautyAuthorBackup';
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { APP_VERSION } from '../../utils/buildInfo';
 import { BEAUTY_PLATFORMS, validateBeautyMetadata, validateBeautyPassword, type BeautyKind, type BeautyMetadata, type BeautyShare, type BeautySubmission } from '../../utils/beautyShareContract';
 import { beautyRequest, downloadBeauty, normalizeBeautyPackage, readBeautyPackage, readBeautySession, saveBeautySession, type BeautySession } from '../../utils/beautyShareClient';
@@ -80,6 +81,18 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   const [previewPack, setPreviewPack] = useState<unknown>(null);
   const [submissionPreview,setSubmissionPreview]=useState<unknown>(null);
   const [confirmedWork,setConfirmedWork]=useState<{pack:unknown;kind:BeautyKind;name:string;source:string}|null>(null);
+  useLocalBackHandler(()=>{
+    if(busy||mustSave)return true;
+    if(deleteId)setDeleteId(null);
+    else if(updateCandidate)setUpdateCandidate(null);
+    else if(termsItems)setTermsItems(null);
+    else if(authorNotice)setAuthorNotice(false);
+    else if(confirmedWork)setConfirmedWork(null);
+    else if(editing)setEditing(null);
+    else if(previewPack)setPreviewPack(null);
+    else return false;
+    return true;
+  }, 30, open);
   const [catalogCover,setCatalogCover]=useState('');
   const [candidateCover,setCandidateCover]=useState('');
   useEffect(()=>setCatalogCover(''),[confirmedWork]);

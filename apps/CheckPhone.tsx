@@ -469,6 +469,11 @@ const CheckPhone: React.FC = () => {
         setEvidenceBackAppId('home');
         setPage(0);
     };
+    useAppShortcut(ShortcutAppID.CheckPhone, intent => {
+        const target = characters.find(c => c.id === intent.characterId);
+        if (!target) { setView('select'); return; }
+        handleSelectChar(target); setActiveAppId(intent.entryId || 'home');
+    });
 
     const apiHost = (url?: string) => {
         try { return url ? new URL(url).host : '未配置'; }
@@ -4160,3 +4165,5 @@ ${olderText}
 };
 
 export default CheckPhone;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { createPortal } from 'react-dom';
 import { DB } from '../../utils/db';
 import type { BeautyShare } from '../../utils/beautyShareContract';
@@ -69,6 +70,7 @@ function WardrobeDetail({ entry, initial, onClose, onApply,onEdit,onExport,onSha
   const [loaded, setLoaded] = useState(initial);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  useLocalBackHandler(() => { onClose(); return true; }, 40);
   useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
   useEffect(() => {
     if (initial) return;

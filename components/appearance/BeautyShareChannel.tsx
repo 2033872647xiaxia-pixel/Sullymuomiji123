@@ -1,3 +1,4 @@
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {MEETING_APPEARANCES} from '../../utils/meetingAppearance';
 import {trackBeauty} from '../../utils/beautyAnalytics';
 import {migrateLegacyWhiteboxPresets} from '../../utils/legacyWhiteboxPresets';
@@ -285,11 +286,24 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     }
     setNotice('已从本机收藏删除。');
   };
+  const goBack = () => {
+    if (busy || applying) return;
+    if (deleteEntry) { setDeleteEntry(null); return; }
+    if (updateEntry) { setUpdateEntry(null); return; }
+    if (desktopEdit) { setDesktopEdit(null); return; }
+    if (saveCurrent) { setSaveCurrent(null); return; }
+    if (received) { setReceived(null); return; }
+    if (draft) { setDraft(null); if (guideStep === 2 || guideStep === 3) setGuideStep(4); return; }
+    if (searchOpen) { setSearchOpen(false); return; }
+    if (page !== 'library') { setPage('library'); if (guideStep === 5 || guideStep === 7) setGuideStep(6); return; }
+    (onBack || closeApp)();
+  };
+  useLocalBackHandler(() => { goBack(); return true; }, 20);
   if(page==='catalog')return <Suspense fallback={<p role="status">正在打开装扮库…</p>}><BeautyCatalog onBack={()=>setPage('library')} onReceive={async(data,share)=>{await receive(data,share);setPage('library');}}/></Suspense>;
   return <div className="beauty-wardrobe">
     <div className="wardrobe-navigation">
       <header className="wardrobe-topline">
-        <button className="wardrobe-back" disabled={busy} aria-label={page === 'library' ? targetCharacterId ? '返回聊天' : '返回外观设置' : '返回我的装扮'} onClick={() => {if(page==='library')(onBack||closeApp)();else{setPage('library');if(guideStep===5||guideStep===7)setGuideStep(6);}}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></button>
+        <button className="wardrobe-back" disabled={busy || applying} aria-label={page === 'library' ? targetCharacterId ? '返回聊天' : '返回外观设置' : '返回我的装扮'} onClick={goBack}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></button>
         <h2>{page === 'library' ? (libraryContext==='chat'?'聊天装扮':'外观装扮') : page==='receive'?'导入装扮':'分享装扮'}</h2>
         <div className="wardrobe-header-actions">{page==='library'&&<><button disabled={busy} aria-label="搜索本机装扮" onClick={() => { setPage('library'); setSearchOpen(v => !v); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/></svg></button>{targetCharacterId&&<button disabled={busy||!targetCharacter} data-dress-guide="mine" aria-label="我 · 当前搭配" onClick={()=>void customize()}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M3 21v-2c0-4 4-6 9-6s9 2 9 6v2z"/></svg></button>}</>}</div>
       </header>

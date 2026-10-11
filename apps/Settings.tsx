@@ -1,3 +1,5 @@
+import NavigationBallSettings from '../components/settings/NavigationBallSettings';
+import { useSettingsFocus } from '../utils/settingsNavigation';
 import ApiPresetGroups from '../components/settings/ApiPresetGroups';
 import ModelPicker from '../components/settings/ModelPicker';
 import { buildModelPickerView } from '../utils/modelPickerView';
@@ -147,6 +149,14 @@ const SettingsSection: React.FC<{
 }> = ({ icon, title, badge, actions, sectionProps, children }) => {
     const guideStep = useFirstUseGuideStep();
     const [open, setOpen] = useState(() => title === 'API 配置' && guideStep === 0);
+    const sectionRef = useRef<HTMLElement>(null);
+    const [focusRequest, setFocusRequest] = useState(0);
+    useSettingsFocus(title === 'API 配置' ? 'api' : undefined, () => {
+        setOpen(true); setFocusRequest(value => value + 1);
+    });
+    useEffect(() => {
+        if (focusRequest) sectionRef.current?.scrollIntoView({ block: 'start' });
+    }, [focusRequest]);
     useEffect(() => {
         const reveal = () => { if (title === 'API 配置' && guideStep === 0) setOpen(true); };
         reveal();
@@ -154,7 +164,7 @@ const SettingsSection: React.FC<{
         return () => window.removeEventListener('sully:guide-navigate', reveal);
     }, [guideStep, title]);
     return (
-        <section {...sectionProps} className="bg-[#fffefe] rounded-3xl p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] border border-slate-200/80">
+        <section {...sectionProps} ref={sectionRef} className="bg-[#fffefe] rounded-3xl p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] border border-slate-200/80">
             <div className={`flex items-center justify-between gap-2 ${open ? 'mb-4' : ''}`}>
                 <button type="button" onClick={() => setOpen(v => !v)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                     {icon}
@@ -2352,6 +2362,7 @@ const Settings: React.FC = () => {
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20">
 
+        <NavigationBallSettings characters={characters} loadWorlds={() => DB.getWorlds()} />
         {/* 外观救急入口统一放在设置顶部，无需进入已被错误 CSS 遮住的聊天或日记。 */}
         <SettingsSection
             title="外观急救"

@@ -1,3 +1,4 @@
+import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import {homePhoneAppearance,HOME_PHONE_BUBBLES} from './room3d/homePhoneAppearance';
 
 import { publishReplyDisplay, stopReplyRuns } from '../utils/chatReplyCancellation';
@@ -3839,6 +3840,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             className={`sully-chat-root ${finalRootClass}`}
             style={finalRootStyle}
         >
+             <ChatRuntimeStyle />
              {/* 聊天细节微调（外观 App 可视化设置生成）：排在用户自定义 CSS 之前——
                  同为 !important 时后写的胜，手写美化代码永远可覆盖可视化设置。 */}
              {chatFineTuneCss && <style>{chatFineTuneCss}</style>}

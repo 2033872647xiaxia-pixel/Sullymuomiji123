@@ -491,6 +491,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, openApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, characters, activeCharacterId, updateCharacter } = useOS();
   const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'sharing'>(() => (hasBeautyReceiveRequest()||hasBeautyLibraryRequest()) ? 'sharing' : 'theme');
+  useAppShortcut(ShortcutAppID.Appearance, intent => setActiveTab((intent.entryId || 'theme') as typeof activeTab));
   const [shareBusy, setShareBusy] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
@@ -1797,3 +1798,5 @@ const Appearance: React.FC = () => {
 };
 
 export default Appearance;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';
