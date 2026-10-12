@@ -1,16 +1,21 @@
 import {expect,it,vi} from 'vitest';
 import {createRoomFinishPass} from '../apps/room3d/roomFinishPass.js';
 
-it('keeps the sharp source full size and samples only the halo at quarter pixel count, reusing buffers',()=>{
+it('blurs the bloom chain at low resolutions, reusing buffers',()=>{
  let width=1170,height=2532,target:any=null;
  const draws:any[]=[],buffers:any[]=[];
  const renderer={autoClear:true,getDrawingBufferSize(v:any){v.set(width,height);},getRenderTarget(){return target;},setRenderTarget(t:any){target=t;if(t&&!buffers.includes(t))buffers.push(t);},copyFramebufferToTexture:vi.fn(),render(mesh:any){draws.push({target,uniforms:mesh.material.uniforms});}};
  const finish=createRoomFinishPass(renderer);finish.render('day');
- expect(draws).toHaveLength(2);expect(draws[0].target.width).toBe(585);expect(draws[0].target.height).toBe(1266);
- expect(draws[1].target).toBeNull();expect(draws[1].uniforms.source.value.image).toMatchObject({width:1170,height:2532});
- const source=draws[1].uniforms.source.value,halo=buffers[0],disposed=vi.fn();halo.addEventListener('dispose',disposed);
- finish.render('night');expect(buffers).toHaveLength(1);expect(draws[3].uniforms.source.value).toBe(source);
- width=2532;height=1170;finish.render('sunset');expect(disposed).toHaveBeenCalledTimes(1);expect(buffers[1]).toMatchObject({width:1266,height:585});
+ // 提取 → 两级降采样模糊 → 合成：全尺寸画面只作为纹理采样，模糊都在低分辨率。
+ expect(draws).toHaveLength(4);
+ expect(buffers[0]).toMatchObject({width:585,height:1266});
+ expect(buffers[1]).toMatchObject({width:293,height:633});
+ expect(buffers[2]).toMatchObject({width:147,height:317});
+ expect(draws[3].target).toBeNull();
+ expect(draws[3].uniforms.source.value.image).toMatchObject({width:1170,height:2532});
+ const source=draws[3].uniforms.source.value,disposed=vi.fn();for(const rt of buffers)rt.addEventListener('dispose',disposed);
+ finish.render('night');expect(buffers).toHaveLength(3);expect(draws[7].uniforms.source.value).toBe(source);expect(draws[7].uniforms.glow.value).toBe(.5);
+ width=2532;height=1170;finish.render('sunset');expect(disposed).toHaveBeenCalledTimes(3);expect(buffers[3]).toMatchObject({width:1266,height:585});expect(buffers[4]).toMatchObject({width:633,height:293});expect(buffers[5]).toMatchObject({width:317,height:147});
  expect(renderer.autoClear).toBe(true);expect(target).toBeNull();finish.dispose();
 });
 

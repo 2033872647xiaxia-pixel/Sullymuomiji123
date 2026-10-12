@@ -4,10 +4,10 @@ import {nowInTimeZone} from '../../utils/timezone';
 // Art-directed time bands, not astronomical sunrise/sunset. Preserve readable
 // local colours in every phase; use the sky and light colour for atmosphere.
 export const ROOM_LIGHT_PHASES={
- morning:{directSun:true,sunPower:4.8,label:'清晨',sky:'#e6f0ff',ground:'#e4d6e2',ambient:1.3,key:'#ffedd2',keyPower:1.85,fill:'#dcecff',fillPower:.5,window:'#ffe2b0',windowPower:.85,background:'#ece7f2',shade:'#e9ecfd',sun:'#fff3e2',brightness:1,skyTop:'#a9d8f5',skyBottom:'#ffe0c0',cloud:'#fff7ef',night:0,character:'#fff8f0'},
+ morning:{directSun:true,sunPower:4.8,label:'清晨',sky:'#e6f0ff',ground:'#e4d6e2',ambient:1.3,key:'#ffedd2',keyPower:1.85,fill:'#dcecff',fillPower:.5,window:'#ffd9a0',windowPower:.95,background:'#ece7f2',shade:'#e9ecfd',sun:'#fff3e2',brightness:1,skyTop:'#a9d8f5',skyBottom:'#ffe0c0',cloud:'#fff7ef',night:0,character:'#fff8f0'},
  day:{label:'白天',sky:'#f4faff',ground:'#e6dfed',ambient:1.85,key:'#fff9eb',keyPower:2.4,fill:'#e7f4ff',fillPower:.65,window:'#fff0ce',windowPower:1,background:'#eee8ef',shade:'#edf3ff',sun:'#fffaf0',brightness:1.04,skyTop:'#70c6fa',skyBottom:'#f4fbff',cloud:'#ffffff',night:0,character:'#ffffff'},
- sunset:{directSun:true,sunPower:6.2,label:'夕阳',sky:'#e9d9f6',ground:'#d0b6c6',ambient:1.15,key:'#ffd9ae',keyPower:1.8,fill:'#d4dcff',fillPower:.6,window:'#ffa257',windowPower:1.35,background:'#f0dee4',shade:'#e7d5f9',sun:'#ffd8a4',brightness:.98,skyTop:'#b78fd8',skyBottom:'#ffc07a',cloud:'#ffdec2',night:0,character:'#ffeeda'},
- night:{label:'夜晚',sky:'#a8b8ea',ground:'#b8abd0',ambient:1.05,key:'#ffe3c0',keyPower:1.6,fill:'#a5c0ff',fillPower:.42,window:'#b9d3ff',windowPower:.18,background:'#bcbad2',shade:'#ccd8f8',sun:'#ffe9cd',brightness:.8,skyTop:'#1c2d50',skyBottom:'#5a658c',cloud:'#7f92b4',night:1,character:'#efeaff'},
+ sunset:{directSun:true,sunPower:6.2,label:'夕阳',sky:'#e9d9f6',ground:'#d0b6c6',ambient:1.05,key:'#ffd9ae',keyPower:1.8,fill:'#d4dcff',fillPower:.6,window:'#ff9a4d',windowPower:1.55,background:'#f0dee4',shade:'#e0ccf8',sun:'#ffd8a4',brightness:.98,skyTop:'#b78fd8',skyBottom:'#ffc07a',cloud:'#ffdec2',night:0,character:'#ffeeda'},
+ night:{label:'夜晚',sky:'#a8b8ea',ground:'#b8abd0',ambient:1.15,key:'#ffe3c0',keyPower:1.6,fill:'#a5c0ff',fillPower:.42,window:'#b9d3ff',windowPower:.22,background:'#bcbad2',shade:'#ccd8f8',sun:'#ffe4c0',brightness:.84,skyTop:'#1c2d50',skyBottom:'#5a658c',cloud:'#7f92b4',night:1,character:'#efeaff'},
 };
 export function roomLightPhase(timeZone,base=new Date()){
  const hour=nowInTimeZone(timeZone,base).getHours();

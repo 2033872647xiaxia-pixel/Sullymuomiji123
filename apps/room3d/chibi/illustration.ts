@@ -95,8 +95,8 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
               // 卡通档压平贴图自带的静态阴影（腮影/侧影）：中间调按幂律提亮（保序不反色），
               // 五官线稿（极暗像素）与亮部保持不动——明暗交给光照色阶，贴图只留固有色与特征。
               float skinLum = dot(inkSkin,inkWeights);
-              float midBand = smoothstep(.20,.32,skinLum)*(1.-smoothstep(.68,.82,skinLum));
-              inkSkin = mix(inkSkin,inkSkin*pow(max(skinLum,.001),-.45),midBand*characterCel);
+              float midBand = smoothstep(.16,.26,skinLum)*(1.-smoothstep(.72,.88,skinLum));
+              inkSkin = mix(inkSkin,inkSkin*pow(max(skinLum,.001),-.5),midBand*characterCel);
             }` : ''}
             vec3 inkPreview = inkSkin * inkShade * inkTint * characterRoomTint;
             float inkBase = max(dot(inkSkin,inkWeights),.001);
@@ -105,13 +105,10 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkDirect = dot(reflectedLight.directDiffuse,inkWeights)/inkBase;
             float inkSun = smoothstep(.18,.85,inkDirect);
             float inkRoomShade = mix(${material.userData.illustrationFace ? '.84' : '.68'},1.0,smoothstep(.18,.82,inkEnergy));
-            // Toon rooms: binary shading on the body—one hard cut with narrow
-            // AA, matching the flattened environment bands. Faces keep a
-            // higher floor and gentler steps to stay legible.
-            float celBand = ${material.userData.illustrationFace ? `.86
-              + .05 * smoothstep(.28,.38,inkEnergy)
-              + .04 * smoothstep(.55,.67,inkEnergy)
-              + .05 * smoothstep(.88,1.02,inkEnergy)` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
+            // Toon rooms: binary shading with narrow AA everywhere—the face keeps
+            // a higher floor to stay legible, but its light also snaps into two
+            // bands instead of a smooth ramp, so faces read flat like the body.
+            float celBand = ${material.userData.illustrationFace ? `0.88 + 0.12 * smoothstep(.30,.40,inkEnergy)` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
             ${material.userData.faceSdf ? `
@@ -140,18 +137,17 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float celDepth = clamp((1.0 - inkRoomShade) * 1.6, 0.0, 1.0);
             inkRoom *= mix(vec3(1.0), ${material.userData.illustrationFace ? 'vec3(.97,.93,1.04)' : 'vec3(.93,.87,1.08)'}, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
-            // 边缘光：背向主光一侧的轮廓亮带（脸部不加，保持画面干净）。
-            // 环带放宽、亮度显著高出暗档，色染跟房间色调——才能从描边里读出来。
-            float inkBack = 1.0 - smoothstep(-.12,.12,dot(normal, normalize(characterLightDirection)));
+            // 边缘光：背向主光一侧的窄硬亮带（脸部不加）。只提亮一档固有色，
+            // 不加白不曝；硬边窄带才是 2D 卡通的高光画法。
+            float inkBack = 1.0 - smoothstep(-.1,.1,dot(normal, normalize(characterLightDirection)));
             float inkGrazing = 1.0 - abs(dot(normal, normalize(vViewPosition)));
-            float inkRimAa = max(fwidth(inkGrazing)*1.5,.025);
-            float inkRim = smoothstep(.56-inkRimAa,.56+inkRimAa,inkGrazing)*inkBack;
-            inkRoom = mix(inkRoom,(inkSkin*.32+vec3(.7))*inkRoomTint,inkRim*characterCel);`}
+            float inkRim = smoothstep(.68,.73,inkGrazing)*inkBack;
+            inkRoom = mix(inkRoom,inkSkin*1.18+vec3(.04),inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v5-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v6-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
