@@ -1,7 +1,10 @@
 import * as T from 'three';
 import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
 
-// Union mask outlines only visible furniture silhouettes, never mesh seams.
+// Outline targets are painted into a mask, then neighbouring mask values are
+// compared to find boundaries. Per-object mode gives every target root its own
+// gray id, so touching objects draw separation lines too; the flat union mode
+// (shared id 1) keeps the retro silhouette-only behaviour.
 // Render the normal scene directly, so its color management remains unchanged.
 export function createFurnitureHalo(renderer,scene,camera){
  const target=new T.WebGLRenderTarget(1,1,{minFilter:T.LinearFilter,magFilter:T.LinearFilter});
@@ -17,46 +20,49 @@ export function createFurnitureHalo(renderer,scene,camera){
      float a=float(i)*6.2831853/8.;vec2 d=vec2(cos(a),sin(a))*pixel;
      edge=max(edge,texture2D(mask,vUv+d*width).r);
     }
-    float line=clamp(edge-center,0.,1.)*.48;
+    // 相邻采样值不同即出线（背景交界、物件相接都会命中），线落在低值一侧。
+    float line=smoothstep(.004,.018,edge-center)*.48;
     gl_FragColor=vec4(ink,line);
     #include <colorspace_fragment>
    }`});
  const quad=new FullScreenQuad(material);
- function maskMaterial(source,selected){
-  // Solid color sections all produce the same binary mask. Share by culling
-  // mode instead of allocating one shader material for every furniture color.
+ function maskMaterial(source,id){
+  // 逐物件描边：每个目标渲成自己的灰阶 id（0 为非目标），纹理材质强制平涂 id
+  // 只保留 alpha 镂空。共享纯色材质的优化随 id 瓦解，蒙版材质本就极简。
   const solid=!source.transparent&&!source.alphaTest&&!source.alphaHash&&!source.alphaMap;
-  const key=(solid?'solid/'+source.side:source.uuid)+'/'+selected;let entry=cache.get(key);
+  const key=(solid?'solid/'+source.side:source.uuid)+'/'+id.toFixed(3);let entry=cache.get(key);
   if(!entry){
-   const m=new T.MeshBasicMaterial({color:selected?0xffffff:0x000000,side:source.side,map:solid?null:source.map,alphaMap:source.alphaMap,alphaTest:source.alphaTest,depthWrite:true});
-   m.toneMapped=false;
-   if(selected)m.onBeforeCompile=s=>{s.fragmentShader=s.fragmentShader.replace('#include <alphatest_fragment>','#include <alphatest_fragment>\ndiffuseColor.rgb=vec3(1.);');};
+   const m=new T.MeshBasicMaterial({side:source.side,map:solid?null:source.map,alphaMap:source.alphaMap,alphaTest:source.alphaTest,depthWrite:true});
+   m.color.setScalar(id);m.toneMapped=false;
+   if(id>0)m.onBeforeCompile=s=>{s.fragmentShader=s.fragmentShader.replace('#include <alphatest_fragment>','#include <alphatest_fragment>\ndiffuseColor.rgb=vec3('+id.toFixed(4)+');');};
    entry={material:m,used:true};cache.set(key,entry);
   }
   entry.used=true;return entry.material;
  }
- function meshMask(mesh,selected){
+ function meshMask(mesh,id){
   const source=mesh.material;
-  if(!Array.isArray(source))return maskMaterial(source,selected);
+  if(!Array.isArray(source))return maskMaterial(source,id);
   // A single material draws all geometry groups in one call. Only collapse
   // fully covered, contiguous groups: sparse groups may intentionally hide faces.
   const count=mesh.geometry.index?.count??mesh.geometry.attributes.position.count;
   let end=0;
   const covered=mesh.geometry.groups.every(g=>{if(g.start!==end||!source[g.materialIndex])return false;end+=g.count;return true;})&&end===count;
   const opaque=source.length&&source.every(m=>m.visible&&!m.transparent&&!m.alphaTest&&!m.alphaHash&&!m.alphaMap&&m.side===source[0].side);
-  if(covered&&opaque)return maskMaterial(source[0],selected);
-  return source.map(m=>maskMaterial(m,selected));
+  if(covered&&opaque)return maskMaterial(source[0],id);
+  return source.map(m=>maskMaterial(m,id));
  }
  return {
   setWidth(px){material.uniforms.width.value=Math.max(.2,Math.min(2.5,Number(px)||.65));},
   setInk(color){material.uniforms.ink.value.set(color);},
-  render(objects){
+  render(objects,perObject=false){
    renderer.render(scene,camera);
    if(!objects.length){coverage=0;return;}
    renderer.getDrawingBufferSize(size);
    if(target.width!==size.x||target.height!==size.y)target.setSize(size.x,size.y);
    material.uniforms.pixel.value.set(renderer.getPixelRatio()/size.x,renderer.getPixelRatio()/size.y);
-   const selected=new Set();for(const root of objects)root.traverse(o=>{if(o.isMesh)selected.add(o)});
+   // 逐物件模式给每个根一个唯一灰阶 id（0.15~1，64 个后循环）；并集模式全用 1。
+   const ids=new Map();
+   objects.forEach((root,i)=>{const id=perObject?.15+.85*((i%64)/63):1;root.traverse(o=>{if(o.isMesh)ids.set(o,id);});});
    bounds.makeEmpty();for(const root of objects)bounds.expandByObject(root);
    if(bounds.isEmpty()){coverage=0;return;}
    let left=1,right=-1,bottom=1,top=-1;
@@ -74,7 +80,7 @@ export function createFurnitureHalo(renderer,scene,camera){
    try{
     scene.background=new T.Color(0);renderer.shadowMap.enabled=false;
     scene.traverse(o=>{
-     if(o.isMesh){restore.push([o,o.material,o.visible]);o.material=meshMask(o,selected.has(o));}
+     if(o.isMesh){restore.push([o,o.material,o.visible]);o.material=meshMask(o,ids.get(o)||0);}
      else if(o.isLine||o.isSprite||o.isPoints){restore.push([o,o.material,o.visible]);o.visible=false;}
     });
     // Clear the full mask to prevent stale outlines after moving the camera.

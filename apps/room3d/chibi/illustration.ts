@@ -64,7 +64,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
         const cacheKey = material.customProgramCacheKey();
         originals.set(material,saved);
         const roomTint={value:new T.Color('#ffffff')};roomTints.set(material,roomTint);
-        const room={enabled:{value:0},uniforms:{roomShadeTint:{value:new T.Color('#ffffff')},roomSunTint:{value:new T.Color('#ffffff')},roomBrightness:{value:1},roomSunContrast:{value:0}},cel:{value:0}};roomLights.set(material,room);
+        const room={enabled:{value:0},uniforms:{roomShadeTint:{value:new T.Color('#ffffff')},roomSunTint:{value:new T.Color('#ffffff')},roomBrightness:{value:1},roomSunContrast:{value:0},roomBounceUp:{value:new T.Color('#ffffff')},roomBounceDown:{value:new T.Color('#ffffff')}},cel:{value:0}};roomLights.set(material,room);
         const faceSdf = material.userData.faceSdf as T.Texture | undefined;
         material.toneMapped = false;
         material.onBeforeCompile = (shader,renderer) => {
@@ -76,9 +76,10 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
           shader.uniforms.dropShadowScreen=dropShadowUniforms.screen;
           shader.uniforms.dropShadowDrop=dropShadowUniforms.drop;
           shader.uniforms.dropShadowEnabled=dropShadowUniforms.enabled;
-          if(faceSdf){shader.uniforms.faceSdfMap={value:faceSdf};shader.uniforms.characterLightDirection=characterLightDirection;}
+          if(faceSdf)shader.uniforms.faceSdfMap={value:faceSdf};
+          shader.uniforms.characterLightDirection=characterLightDirection;
           Object.assign(shader.uniforms,room.uniforms);
-          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\nuniform vec3 characterLightDirection;\n':'')+'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\n'+shader.fragmentShader;
+          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\n':'')+'uniform vec3 characterLightDirection;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n'+shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace(
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `
@@ -88,9 +89,17 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkLit = smoothstep(0.12 - inkEdge, 0.12 + inkEdge, inkFacing);
             float inkShade = mix(${material.userData.illustrationFace ? '0.90' : '0.70'}, 1.0, inkLit);
             vec3 inkTint = mix(vec3(0.96, 0.97, 1.0), vec3(1.0), inkLit);
-            vec3 inkPreview = diffuseColor.rgb * inkShade * inkTint * characterRoomTint;
             vec3 inkWeights = vec3(.2126,.7152,.0722);
-            float inkBase = max(dot(diffuseColor.rgb,inkWeights),.001);
+            vec3 inkSkin = diffuseColor.rgb;
+            ${material.userData.illustrationFace || material.userData.illustrationSkin ? `{
+              // 卡通档压平贴图自带的静态阴影（腮影/侧影）：中间调按幂律提亮（保序不反色），
+              // 五官线稿（极暗像素）与亮部保持不动——明暗交给光照色阶，贴图只留固有色与特征。
+              float skinLum = dot(inkSkin,inkWeights);
+              float midBand = smoothstep(.20,.32,skinLum)*(1.-smoothstep(.68,.82,skinLum));
+              inkSkin = mix(inkSkin,inkSkin*pow(max(skinLum,.001),-.45),midBand*characterCel);
+            }` : ''}
+            vec3 inkPreview = inkSkin * inkShade * inkTint * characterRoomTint;
+            float inkBase = max(dot(inkSkin,inkWeights),.001);
             float inkEnergy = dot(totalDiffuse,inkWeights)/inkBase;
             // directDiffuse includes window occlusion and the actual light direction.
             float inkDirect = dot(reflectedLight.directDiffuse,inkWeights)/inkBase;
@@ -122,21 +131,27 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
               ? smoothstep(.35,.65,texture2D(dropShadowMask,(gl_FragCoord.xy/dropShadowScreen)+dropShadowDrop).a)
               : 0.0;
             inkRoomShade = mix(inkRoomShade, ${material.userData.illustrationFace ? '.80' : '.78'}, dropMask);` : ''}
-            vec3 inkRoomTint = mix(roomShadeTint,roomSunTint,inkSun);
-            vec3 inkRoom = diffuseColor.rgb * inkRoomShade * inkRoomTint * roomBrightness;
+            // 漫反射：阴影色按表面朝向混入天空反弹/地面反弹色，别是单一死色。
+            vec3 inkWorldN = normalize(vec3(dot(viewMatrix[0].xyz,normal),dot(viewMatrix[1].xyz,normal),dot(viewMatrix[2].xyz,normal)));
+            vec3 inkBounce = mix(roomBounceDown,roomBounceUp,inkWorldN.y*.5+.5);
+            vec3 inkRoomTint = mix(mix(roomShadeTint,inkBounce,.3),roomSunTint,inkSun);
+            vec3 inkRoom = inkSkin * inkRoomShade * inkRoomTint * roomBrightness;
             // 卡通阴影偏色：阴影档不压黑，而是整体向玫瑰→紫的方向换色（脸部更轻）。
             float celDepth = clamp((1.0 - inkRoomShade) * 1.6, 0.0, 1.0);
             inkRoom *= mix(vec3(1.0), ${material.userData.illustrationFace ? 'vec3(.97,.93,1.04)' : 'vec3(.93,.87,1.08)'}, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
-            // 边缘光：只出现在背光侧的硬边亮带（脸部不加，保持画面干净）。
+            // 边缘光：背向主光一侧的轮廓亮带（脸部不加，保持画面干净）。
+            // 环带放宽、亮度显著高出暗档，色染跟房间色调——才能从描边里读出来。
+            float inkBack = 1.0 - smoothstep(-.12,.12,dot(normal, normalize(characterLightDirection)));
             float inkGrazing = 1.0 - abs(dot(normal, normalize(vViewPosition)));
-            float inkRim = smoothstep(.70,.76,inkGrazing) * (1.0 - smoothstep(.10,.22,inkEnergy));
-            inkRoom = mix(inkRoom, (diffuseColor.rgb * 1.10 + vec3(.07)) * inkRoomTint, inkRim * characterCel);`}
+            float inkRimAa = max(fwidth(inkGrazing)*1.5,.025);
+            float inkRim = smoothstep(.56-inkRimAa,.56+inkRimAa,inkGrazing)*inkBack;
+            inkRoom = mix(inkRoom,(inkSkin*.32+vec3(.7))*inkRoomTint,inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v4-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v5-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

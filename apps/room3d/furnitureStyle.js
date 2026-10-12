@@ -9,7 +9,7 @@ export function applyRetroFurniture(material,lightUniforms,options) {
  material.toneMapped = false;
  material.onBeforeCompile = shader => {
   if(lightUniforms)Object.assign(shader.uniforms,lightUniforms);
-  shader.fragmentShader=(lightUniforms?'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\n':'const vec3 roomShadeTint=vec3(.88,.92,1.);\nconst vec3 roomSunTint=vec3(1.,.97,.92);\nconst float roomBrightness=1.;\nconst float roomSunContrast=0.;\n')+shader.fragmentShader;
+  shader.fragmentShader=(lightUniforms?'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n':'const vec3 roomShadeTint=vec3(.88,.92,1.);\nconst vec3 roomSunTint=vec3(1.,.97,.92);\nconst float roomBrightness=1.;\nconst float roomSunContrast=0.;\nconst vec3 roomBounceUp=vec3(.95,.97,1.);\nconst vec3 roomBounceDown=vec3(1.,.94,.9);\n')+shader.fragmentShader;
   shader.fragmentShader = shader.fragmentShader.replace(
    'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
    `
@@ -24,6 +24,10 @@ export function applyRetroFurniture(material,lightUniforms,options) {
      + 0.06 * smoothstep(0.88, 1.02, illumination);`}
    float daylight = smoothstep(0.8, 2.8, illumination);
    vec3 shadowTint = mix(roomShadeTint, roomSunTint, smoothstep(0.25, 1.3, illumination));
+   // 漫反射：阴影带按表面朝向染天空反弹/地面反弹色（朝上偏冷、朝下偏暖），
+   // 不同朝向的暗面颜色有呼吸感，不再是同一块死色。
+   vec3 shadeNormal = normalize(vec3(dot(viewMatrix[0].xyz,normal),dot(viewMatrix[1].xyz,normal),dot(viewMatrix[2].xyz,normal)));
+   shadowTint = mix(shadowTint, mix(roomBounceDown,roomBounceUp,shadeNormal.y*.5+.5), .45);
    // A restrained white reflection follows the actual lights and camera.
    // Cap it so the broad color blocks do not turn into glossy white plastic.
    float shaft = smoothstep(.12, .65, dot(reflectedLight.directDiffuse, weights) / base);

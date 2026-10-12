@@ -2,8 +2,10 @@ import * as T from 'three';
 
 // Analytic, depth-tested light halos. All lamps share one draw and no textures.
 // Points are omitted by the furniture outline mask, so they cannot grow outlines.
+// 夜里灯具同时点亮真实点光源（常驻 4 盏、无阴影）：地面与墙面出现暖光池，
+// 人物走近也会被照亮。灯常驻场景避免运行时增删光源触发全材质重编译。
 export function createLampGlow(){
- const limit=16,positions=new Float32Array(limit*3),diameters=new Float32Array(limit);
+ const limit=16,lightLimit=4,positions=new Float32Array(limit*3),diameters=new Float32Array(limit);
  const geometry=new T.BufferGeometry();
  geometry.setAttribute('position',new T.BufferAttribute(positions,3).setUsage(T.DynamicDrawUsage));
  geometry.setAttribute('diameter',new T.BufferAttribute(diameters,1).setUsage(T.DynamicDrawUsage));
@@ -19,7 +21,9 @@ export function createLampGlow(){
    gl_FragColor=vec4(1.,.63,.28,halo);
    #include <colorspace_fragment>
   }`});
- const root=new T.Points(geometry,material);root.name='night-lamp-glow';root.frustumCulled=false;root.visible=false;root.raycast=()=>{};
+ const points=new T.Points(geometry,material);points.frustumCulled=false;points.raycast=()=>{};
+ const lights=Array.from({length:lightLimit},()=>{const light=new T.PointLight('#ffbe78',0,6,2);light.castShadow=false;return light;});
+ const root=new T.Group();root.name='night-lamp-glow';root.add(points,...lights);root.visible=false;
  let sources=[],count=0;const point=new T.Vector3(),scale=new T.Vector3();
  const visible=o=>{for(;o;o=o.parent)if(!o.visible)return false;return true;};
  return {root,
@@ -36,17 +40,19 @@ export function createLampGlow(){
    });
   },
   update(enabled,viewportHeight){
-   count=0;root.visible=enabled&&sources.length>0;if(!root.visible)return;
-   for(const s of sources){
-    if(!visible(s.mesh))continue;
-    s.mesh.updateWorldMatrix(true,false);point.copy(s.center).applyMatrix4(s.mesh.matrixWorld);s.mesh.getWorldScale(scale);
-    point.toArray(positions,count*3);
-    diameters[count]=T.MathUtils.clamp(Math.max(s.size.x*scale.x,s.size.y*scale.y,s.size.z*scale.z)*3.4,.65,2.3);count++;
-   }
-   root.visible=count>0;geometry.setDrawRange(0,count);
-   geometry.attributes.position.needsUpdate=true;geometry.attributes.diameter.needsUpdate=true;
-   material.uniforms.viewportHeight.value=viewportHeight;
-  },
+  count=0;let lit=0;
+  for(const s of sources){
+   if(!visible(s.mesh))continue;
+   s.mesh.updateWorldMatrix(true,false);point.copy(s.center).applyMatrix4(s.mesh.matrixWorld);s.mesh.getWorldScale(scale);
+   if(lit<lightLimit){const light=lights[lit++];light.position.copy(point);light.position.y+=.3;light.intensity=enabled?2.1:0;}
+   point.toArray(positions,count*3);
+   diameters[count]=T.MathUtils.clamp(Math.max(s.size.x*scale.x,s.size.y*scale.y,s.size.z*scale.z)*3.4,.65,2.3);count++;
+  }
+  for(let i=lit;i<lightLimit;i++)lights[i].intensity=0;
+  root.visible=enabled&&count>0;geometry.setDrawRange(0,count);
+  geometry.attributes.position.needsUpdate=true;geometry.attributes.diameter.needsUpdate=true;
+  material.uniforms.viewportHeight.value=viewportHeight;
+ },
   inspect:()=>({count,visible:root.visible,limit,positions:Array.from({length:count},(_,i)=>Array.from(positions.slice(i*3,i*3+3)))}),
   dispose(){sources=[];count=0;root.visible=false;root.removeFromParent();geometry.dispose();material.dispose();}
  };

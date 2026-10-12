@@ -14,8 +14,8 @@ describe('room actors share lighting without losing painted materials',()=>{
   expect(mesh.receiveShadow).toBe(true);expect(mesh.castShadow).toBe(false);
   expect(shader.characterRoomEnabled.value).toBe(1);expect(shader.roomSunTint).toBe(light.roomSunTint);
   const version=material.version;setCharacterRoomLighting(root,light);expect(material.version).toBe(version);
-  updateRoomLightUniforms(light,ROOM_LIGHT_PHASES.sunset);expect(shader.roomSunTint.value.getHexString()).toBe('ffdfb9');
-  updateRoomLightUniforms(light,ROOM_LIGHT_PHASES.night);expect(shader.roomBrightness.value).toBe(.86);
+  updateRoomLightUniforms(light,ROOM_LIGHT_PHASES.sunset);expect(shader.roomSunTint.value.getHexString()).toBe('ffd8a4');
+  updateRoomLightUniforms(light,ROOM_LIGHT_PHASES.night);expect(shader.roomBrightness.value).toBe(.8);
   expect(material.map).toBe(map);expect(material.alphaTest).toBe(.3);expect(material.version).toBe(version);
   mesh.geometry.dispose();material.dispose();map.dispose();
  });
