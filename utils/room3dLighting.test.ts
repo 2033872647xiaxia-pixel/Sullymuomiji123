@@ -5,9 +5,9 @@ describe('room lighting work limits',()=>{
  it('keeps a window shadow in power-saving mode without the extra outline scene pass',()=>{
   for(const touch of [false,true])expect(roomLightBudget('eco',touch)).toMatchObject({windows:1,keyShadow:false,outline:false});
  });
- it('caps all touch presets at one shadowed source, with outlines only on Clear',()=>{
+ it('caps all touch presets at one shadowed source, with outlines and key shadow only on Clear',()=>{
   for(const quality of ['eco','balanced'])expect(roomLightBudget(quality,true)).toMatchObject({windows:1,keyShadow:false,outline:false});
-  expect(roomLightBudget('clear',true)).toMatchObject({windows:1,keyShadow:false,outline:true});
+  expect(roomLightBudget('clear',true)).toMatchObject({windows:1,keyShadow:true,outline:true,shadowSize:2048});
  });
  it('spends additional passes only on desktop quality modes and skips them in overview',()=>{
   expect(roomLightBudget('balanced')).toMatchObject({windows:1,keyShadow:true,outline:true,shadowSize:1024});

@@ -120,10 +120,12 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkDirect = dot(reflectedLight.directDiffuse,inkWeights)/inkBase;
             float inkSun = smoothstep(.18,.85,inkDirect);
             float inkRoomShade = mix(${material.userData.illustrationFace ? '.84' : '.68'},1.0,smoothstep(.18,.82,inkEnergy));
-            // Toon rooms: binary shading with narrow AA everywhere—the face keeps
-            // a higher floor to stay legible, but its light also snaps into two
-            // bands instead of a smooth ramp, so faces read flat like the body.
-            float celBand = ${material.userData.illustrationFace ? `0.88 + 0.12 * smoothstep(.30,.40,inkEnergy)` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
+            // Toon rooms: the body snaps into two hard bands. The face skips the
+            // physical band entirely—it stays fully lit and gets ALL of its
+            // shadows from the SDF fringe term below (and the screen-space
+            // fallback): physically-cut chin/under-nose shading reads as ugly
+            // noise that no cel anime face has.
+            float celBand = ${material.userData.illustrationFace ? `1.0` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
             ${material.userData.faceSdf ? `
@@ -169,7 +171,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v9-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v10-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
