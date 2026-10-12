@@ -179,7 +179,9 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(shellsOn!==shellVisibleState){shellVisibleState=shellsOn;scene.traverse(o=>{if(o.userData.outlineShell)o.visible=shellsOn;});}
   outlineShellWidth.value=outlineWidth*(camera.right-camera.left)/camera.zoom/Math.max(1,renderer.domElement.clientWidth);
   if(shellsOn)for(const r of petSystem?.outlineRoots()||[])addOutlineShells(r);
-if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){furnitureHalo.render(outlinedObjects,false);}else renderer.render(scene,camera);if(finishEnabled)roomFinish.render(lightPhase);}finally{restoreForeground?.();restorePoke?.();restorePresence?.();renderer.info.autoReset=reset;}}
+if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){furnitureHalo.render(outlinedObjects,false);}
+  else if(shellsOn){let thin=[];for(const root of characterOutlineRoots().concat(petSystem?.outlineRoots()||[]))root.traverse(o=>{if(o.userData.haloOutline)thin.push(o);});if(thin.length)furnitureHalo.render(thin,true);else renderer.render(scene,camera);}
+  else renderer.render(scene,camera);if(finishEnabled)roomFinish.render(lightPhase);}finally{restoreForeground?.();restorePoke?.();restorePresence?.();renderer.info.autoReset=reset;}}
  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=false;controls.enablePan=true;controls.screenSpacePanning=true;controls.target.set(0,2,0);
  const effectiveRoomScope=()=>onMenu||viewMode==='flat'?'room':roomScope;
  const displayOffset=(r,anchor)=>overview?[(homeDisplayX(state,r)-homeDisplayX(state,anchor))*ROOM_STEP.x,(r.z-anchor.z)*ROOM_STEP.z]:roomOffset(r,anchor);

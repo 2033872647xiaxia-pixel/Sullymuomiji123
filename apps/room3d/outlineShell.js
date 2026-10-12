@@ -57,6 +57,8 @@ export function addOutlineShells(root){
  root.traverse(o=>{
   if(!o.isMesh||o.userData.outlineShell)return;
   const mats=Array.isArray(o.material)?o.material:[o.material];
+  // 双面材质=无厚度薄片（发片、帘幔）：背面外壳几乎不出线，改标后处理描边。
+  if(mats.length&&mats.every(m=>m&&m.side===T.DoubleSide)){o.userData.haloOutline=true;return;}
   const shells=mats.map(shellMaterial);
   if(shells.every(m=>m===hidden))return;
   const material=shells.length>1?shells:shells[0];

@@ -80,6 +80,7 @@ export function createFurnitureHalo(renderer,scene,camera){
    try{
     scene.background=new T.Color(0);renderer.shadowMap.enabled=false;
     scene.traverse(o=>{
+     if(o.userData.outlineShell){restore.push([o,o.material,o.visible]);o.visible=false;return;}
      if(o.isMesh){restore.push([o,o.material,o.visible]);o.material=meshMask(o,ids.get(o)||0);}
      else if(o.isLine||o.isSprite||o.isPoints){restore.push([o,o.material,o.visible]);o.visible=false;}
     });
