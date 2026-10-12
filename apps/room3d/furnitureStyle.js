@@ -1,6 +1,7 @@
 // Furniture-only experiment: clean color blocks, without pixelation or extra passes.
 // Keep the existing geometry normals, alpha cutouts, shadows and emissive details.
 // options.flat：卡通档——一刀切二值明暗（复古的三段色阶保持不变）。
+import {characterLightDirection} from './chibi/illustration.js';
 export function applyRetroFurniture(material,lightUniforms,options) {
  if (!material.isMeshStandardMaterial) return;
  const flat=!!options?.flat;
@@ -15,16 +16,22 @@ export function applyRetroFurniture(material,lightUniforms,options) {
  material.toneMapped = false;
  material.onBeforeCompile = shader => {
   if(lightUniforms)Object.assign(shader.uniforms,lightUniforms);
-  shader.fragmentShader=(lightUniforms?'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n':'const vec3 roomShadeTint=vec3(.88,.92,1.);\nconst vec3 roomSunTint=vec3(1.,.97,.92);\nconst float roomBrightness=1.;\nconst float roomSunContrast=0.;\nconst vec3 roomBounceUp=vec3(.95,.97,1.);\nconst vec3 roomBounceDown=vec3(1.,.94,.9);\n')+shader.fragmentShader;
+  shader.uniforms.keyDirection=characterLightDirection;
+  shader.fragmentShader='uniform vec3 keyDirection;\n'+(lightUniforms?'uniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n':'const vec3 roomShadeTint=vec3(.88,.92,1.);\nconst vec3 roomSunTint=vec3(1.,.97,.92);\nconst float roomBrightness=1.;\nconst float roomSunContrast=0.;\nconst vec3 roomBounceUp=vec3(.95,.97,1.);\nconst vec3 roomBounceDown=vec3(1.,.94,.9);\n')+shader.fragmentShader;
   shader.fragmentShader = shader.fragmentShader.replace(
    'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
    `
    vec3 weights = vec3(0.2126, 0.7152, 0.0722);
    float base = max(dot(diffuseColor.rgb, weights), 0.001);
    float illumination = dot(totalDiffuse, weights) / base;
-   ${flat ? `// 卡通档：二值明暗（窄 AA 防闪烁），阈值按材质档位取——金属最深最硬，
-   // 光滑硬材稍亮，软材维持原档。软阴影随量化变成平色块。
-   float shade = ${metal ? '0.60 + 0.40 * smoothstep(0.40, 0.44, illumination)' : glossy ? '0.72 + 0.28 * smoothstep(0.36, 0.40, illumination)' : '0.68 + 0.32 * smoothstep(0.43, 0.47, illumination)'};` : `// Broad, gently joined steps keep curved furniture readable in motion.
+   ${flat ? `// 卡通档：二值明暗。判定以主光方向二分为主——dot(N,L) 在曲面上变化陡，
+   // 色阶边界恒定锐利（能量场缓变处阈值线会被拉成软带）；能量档只兜底
+   // 投影区。金属最深最硬，光滑硬材稍亮，软材维持原档。
+   float dirFacing = dot(normal, normalize(keyDirection));
+   float dirAA = max(fwidth(dirFacing)*1.5, .02);
+   float dirBand = ${metal ? '0.60 + 0.40 * smoothstep(-dirAA, dirAA, dirFacing)' : glossy ? '0.72 + 0.28 * smoothstep(-dirAA, dirAA, dirFacing)' : '0.68 + 0.32 * smoothstep(-dirAA, dirAA, dirFacing)'};
+   float energyBand = ${metal ? '0.60 + 0.40 * smoothstep(0.40, 0.44, illumination)' : glossy ? '0.72 + 0.28 * smoothstep(0.36, 0.40, illumination)' : '0.68 + 0.32 * smoothstep(0.43, 0.47, illumination)'};
+   float shade = min(dirBand, energyBand);` : `// Broad, gently joined steps keep curved furniture readable in motion.
    float shade = 0.74
      + 0.10 * smoothstep(0.28, 0.38, illumination)
      + 0.10 * smoothstep(0.55, 0.67, illumination)
@@ -49,7 +56,7 @@ export function applyRetroFurniture(material,lightUniforms,options) {
    vec3 outgoingLight = mix(diffuseColor.rgb * (shade + daylight * 0.3) * shadowTint * roomBrightness, vec3(1.0, 0.96, 0.83), reflection) + totalEmissiveRadiance;
    `);
  };
- material.customProgramCacheKey = () => 'retro-furniture-time-v6-'+!!lightUniforms+(flat?'-flat':'')+(metal?'-metal':glossy?'-glossy':'');
+ material.customProgramCacheKey = () => 'retro-furniture-time-v7-'+!!lightUniforms+(flat?'-flat':'')+(metal?'-metal':glossy?'-glossy':'');
 }
 
 // Full-scene toon mode: reuse the cel shading above on walls/floors, and keep

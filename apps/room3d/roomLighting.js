@@ -16,6 +16,19 @@ export function roomLightPhase(timeZone,base=new Date()){
 export function resolveRoomLightPhase(mode,timeZone,base){
  return Object.hasOwn(ROOM_LIGHT_PHASES,mode)?mode:roomLightPhase(timeZone,base);
 }
+// 两档时段连续插值（换时段时 20 秒渐变过渡而非整点跳变）：
+// 颜色 lerp、数值 lerp；label 等非插值字段直接取目标档。
+const blendA=new T.Color(),blendB=new T.Color();
+export function blendRoomPhase(a,b,t){
+ const out={};
+ for(const key of Object.keys(b)){
+  const av=a[key],bv=b[key];
+  if(typeof bv==='number')out[key]=av+(bv-av)*t;
+  else if(typeof bv==='string'&&key!=='label')out[key]='#'+blendA.set(av).lerp(blendB.set(bv),t).getHexString();
+  else out[key]=bv;
+ }
+ return out;
+}
 // These uniform objects are shared by this editor's materials. Changing time
 // updates values only: no rebuild, shader compilation or new render pass.
 export function createRoomLightUniforms(){

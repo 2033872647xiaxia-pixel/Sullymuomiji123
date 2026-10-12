@@ -16,6 +16,30 @@ const roomLights = new WeakMap<T.MeshStandardMaterial, {enabled:{value:number}; 
 // 主光方向（视野空间，表面→光），脸部 SDF 阴影的横向扫动阈值用；由家园编辑器每帧刷新。
 export const characterLightDirection={value:new T.Vector3(0,0,1)};
 
+// 明暗色带 ramp 图（256×4）：行=脸/皮肤/头发/身体，横轴 0=各部位影色 → 1=纯白。
+// 程序生成默认值，与旧的硬编码影色一致；之后调色改这里的行渐变即可，不动 shader。
+let characterRamp:T.Texture|null=null;
+function getCharacterRamp(){
+ if(!characterRamp){
+  if(typeof document==='undefined'){
+   // 非浏览器环境（单测编译 shader）：白色占位，影色保持不动。
+   characterRamp=new T.DataTexture(new Uint8Array([255,255,255,255]),1,1);characterRamp.needsUpdate=true;
+  }else{
+   const canvas=document.createElement('canvas');canvas.width=256;canvas.height=4;
+   const ctx=canvas.getContext('2d')!;
+   const bands=[[.97,.92,1.05],[.94,.89,1.08],[.90,.83,1.13],[.94,.87,1.07]];
+   bands.forEach((c,i)=>{
+    const gradient=ctx.createLinearGradient(0,0,256,0);
+    gradient.addColorStop(0,`rgb(${c.map(v=>Math.round(v*255)).join(',')})`);
+    gradient.addColorStop(1,'#ffffff');
+    ctx.fillStyle=gradient;ctx.fillRect(0,i,256,1);
+   });
+   characterRamp=new T.CanvasTexture(canvas);characterRamp.colorSpace=T.SRGBColorSpace;
+  }
+ }
+ return characterRamp;
+}
+
 export function setCharacterRoomLighting(root:T.Object3D,uniforms:RoomLightUniforms,cel=false){
  root.traverse(object=>{
   if(!(object instanceof T.Mesh))return;
@@ -67,6 +91,8 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
         const room={enabled:{value:0},uniforms:{roomShadeTint:{value:new T.Color('#ffffff')},roomSunTint:{value:new T.Color('#ffffff')},roomBrightness:{value:1},roomSunContrast:{value:0},roomBounceUp:{value:new T.Color('#ffffff')},roomBounceDown:{value:new T.Color('#ffffff')}},cel:{value:0}};roomLights.set(material,room);
         const faceSdf = material.userData.faceSdf as T.Texture | undefined;
         const eyeMask = material.userData.eyeMask as T.Texture | undefined;
+        // 色带行：脸/皮肤/头发/身体各占一行（采样 v 取行中心）。
+        const rampRow = material.userData.illustrationFace ? '.125' : material.userData.illustrationSkin ? '.375' : material.userData.illustrationHair ? '.625' : '.875';
         material.toneMapped = false;
         material.onBeforeCompile = (shader,renderer) => {
           saved.compile.call(material,shader,renderer);
@@ -79,9 +105,10 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
           shader.uniforms.dropShadowEnabled=dropShadowUniforms.enabled;
           if(faceSdf)shader.uniforms.faceSdfMap={value:faceSdf};
           if(eyeMask)shader.uniforms.eyeMaskMap={value:eyeMask};
+          shader.uniforms.rampMap={value:getCharacterRamp()};
           shader.uniforms.characterLightDirection=characterLightDirection;
           Object.assign(shader.uniforms,room.uniforms);
-          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\n':'')+(eyeMask?'uniform sampler2D eyeMaskMap;\n':'')+'uniform vec3 characterLightDirection;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n'+shader.fragmentShader;
+          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\n':'')+(eyeMask?'uniform sampler2D eyeMaskMap;\n':'')+'uniform sampler2D rampMap;\nuniform vec3 characterLightDirection;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n'+shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace(
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `
@@ -127,9 +154,15 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             // shadows from the SDF fringe term below (and the screen-space
             // fallback): physically-cut chin/under-nose shading reads as ugly
             // noise that no cel anime face has.
-            float celBand = ${material.userData.illustrationFace ? `1.0` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
+            // 身体档改以主光方向二分：dot(N,L) 在曲面上变化陡，色阶边界恒定
+            // 锐利（能量场的缓变会把阈值线在屏幕上拉成软带）；能量档只兜底
+            // 处理投影区——受影的亮面压回暗档，取两者更暗。
+            ${material.userData.illustrationFace ? 'float celBand = 1.0;' : `
+            float inkFacing = dot(normal, normalize(characterLightDirection));
+            float inkFaceAA = max(fwidth(inkFacing)*1.5, .02);
+            float celBand = min(0.70 + 0.30*smoothstep(-inkFaceAA, inkFaceAA, inkFacing),
+                                0.70 + 0.30*smoothstep(.43,.47,inkEnergy));`}
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
-            inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
             ${material.userData.faceSdf ? `
             // 脸部 SDF 阴影（原神式全范围扫动）：距离场由前发部件生成（faceSdf.ts），
             // 阈值面沿横向整体倾斜——光从右来，左半脸从发际线整片入影；正前光只剩
@@ -159,8 +192,11 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             // 色见本：阴影色各部位不一致——发影偏蓝紫更深、肤色影偏粉、衣身影偏紫；
             // 再按表面朝向混入环境反弹色（与场景阴影同逻辑），阴影不是全画面一个死色。
             float celDepth = clamp((1.0 - inkRoomShade) * 1.6, 0.0, 1.0);
-            vec3 inkShadowTint = ${material.userData.illustrationHair ? 'vec3(.90,.83,1.13)' : material.userData.illustrationFace ? 'vec3(.97,.92,1.05)' : 'vec3(.94,.87,1.07)'};
-            inkShadowTint = mix(inkShadowTint, inkBounce, .22);
+            // 明暗色带采样 ramp 图（行=部位分区，暗端各部位影色、亮端纯白不
+            // 动固有色）——直射不再额外提档，保持干净的二值色阶；
+            // 环境反弹色照旧动态混入。色带数值从此与代码解耦。
+            vec3 inkShadowTint = texture2D(rampMap, vec2(clamp(celDepth*2.0,0.0,1.0), ${rampRow})).rgb;
+            inkShadowTint = mix(inkShadowTint, mix(vec3(1.0),inkBounce,celDepth), .22);
             inkRoom *= mix(vec3(1.0), inkShadowTint, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
             // 边缘光（脸部不加）：整圈轮廓都有窄硬亮带，受光侧弱、背光侧强，
@@ -180,7 +216,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v13-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v15-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

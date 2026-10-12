@@ -65,7 +65,8 @@ import {createWindowDaylight} from './windowDaylightLights.js';
 import {applyWindowSky} from './windowSky.js';
 import {inferWindowAperture,isWindowPane,windowSunPose} from './windowAperture.js';
 import {createRoomFinishPass} from './roomFinishPass.js';
-import {ROOM_LIGHT_PHASES,resolveRoomLightPhase,createRoomLightUniforms,updateRoomLightUniforms} from './roomLighting.js';
+import {ROOM_LIGHT_PHASES,resolveRoomLightPhase,createRoomLightUniforms,updateRoomLightUniforms,blendRoomPhase} from './roomLighting.js';
+import {finishParams} from './roomFinishPass.js';
 import {isPhoneBrowser,PHONE_BUDGET,furnishingCounts,phoneBudgetError} from './deviceBudget.js';
 import {ROOM_HALF,ROOM_SCALE,MAX_BUILDING_LENGTH} from './dimensions.js';
 import {gamingActivities,placeGamingPreset,GAMING_ACTIONS} from './gaming.js';
@@ -186,7 +187,21 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(!manual&&!destroyed&&!suspended&&!document.hidden&&Number.isFinite(delay))faceTimer=setTimeout(()=>{faceTimer=0;dirty=true;wake();},Math.ceil(delay*1000));
  }
  function setResidentExpression(id,settings){if(!id)return;residentExpressions.set(id,{eyes:['closed','happy'].includes(settings.eyes)?settings.eyes:'auto',blink:settings.blink!==false});dirty=true;wake();}
- function renderScene(){updateHomelyAttention();if(firstPerson&&!photoSession){syncHomelyCamera();faceHomelyCamera();}const restorePresence=applyHomelyPresence(),restorePoke=applyHomelyPoke();if(interaction?.petId)positionInteraction();syncPortraitRail();syncAutomaticWalls();syncInteriorPresentation();lampGlow.update(finishEnabled&&lightPhase==='night'&&!overview,renderer.domElement.height);walkFeedback.update(elapsed,[current().x*ROOM_STEP.x,current().z*ROOM_STEP.z],!edit&&!overview,Math.max(1,28*(camera.right-camera.left)/(camera.zoom*size.w*.69)));syncResidentLight(visitor);for(const e of comparisonEntries)syncResidentLight(e.visitor);for(const e of socialEntries)syncResidentLight(e.visitor);if(!photoSession){placeComparisonVisitors();placeSocialVisitors();updateResidentFaces();}bathroomEffects.update(objects,!edit&&!overview?visitorActivity:null,elapsed-visitorStart,reducedMotion);const reset=renderer.info.autoReset;renderer.info.autoReset=false;renderer.info.reset();let restoreForeground;try{if(firstPerson){if(homelyAttention?.close&&!photoSession){homelyForeground??=createHomelyForeground({renderer,scene,camera,resident,container:host.parentElement,stage});restoreForeground=homelyForeground.capture(homelyAttention.close,visitor?.getHeadWorldPosition?.());}else homelyForeground?.hide();}if(furnitureStyle==='toon'){camera.updateMatrixWorld();camera.matrixWorldInverse.copy(camera.matrixWorld).invert();characterLightDirection.value.copy(key.position).sub(key.target.position).normalize().transformDirection(camera.matrixWorldInverse);dropShadow.render(scene,camera,characterOutlineRoots(),key);}else dropShadow.off();
+ function renderScene(){let finishBlend=null;
+  if(phaseBlendFrom){
+   // 时段过渡推进：灯色/环境/角色染色/色罩逐帧插值，重资产半程切，完成后收敛。
+   const t=Math.min(1,(performance.now()-phaseBlendStart)/20000);
+   const p=blendRoomPhase(phaseBlendFrom,ROOM_LIGHT_PHASES[phaseBlendTargetKey],t);
+   phaseCurrent=p;applyPhase(p,t>=.5&&!phaseHeavyDone);
+   if(t>=.5)phaseHeavyDone=true;
+   updateCharacterTints(p);
+   const fa=finishParams(phaseBlendFromKey),fb=finishParams(phaseBlendTargetKey);
+   const mixColor=(x,y)=>'#'+new THREE.Color(x).lerp(new THREE.Color(y),t).getHexString();
+   finishBlend={glow:fa.glow+(fb.glow-fa.glow)*t,warmth:fa.warmth+(fb.warmth-fa.warmth)*t,veilTop:mixColor(fa.veilTop,fb.veilTop),veilBottom:mixColor(fa.veilBottom,fb.veilBottom),veilAmount:fa.veilAmount+(fb.veilAmount-fa.veilAmount)*t};
+   if(t>=1){phaseCurrent=ROOM_LIGHT_PHASES[phaseBlendTargetKey];phaseCurrentKey=phaseBlendTargetKey;phaseBlendFrom=null;phaseBlendFromKey=null;phaseBlendTargetKey=null;}
+   else{dirty=true;wake();}
+  }
+  updateHomelyAttention();if(firstPerson&&!photoSession){syncHomelyCamera();faceHomelyCamera();}const restorePresence=applyHomelyPresence(),restorePoke=applyHomelyPoke();if(interaction?.petId)positionInteraction();syncPortraitRail();syncAutomaticWalls();syncInteriorPresentation();lampGlow.update(finishEnabled&&lightPhase==='night'&&!overview,renderer.domElement.height);walkFeedback.update(elapsed,[current().x*ROOM_STEP.x,current().z*ROOM_STEP.z],!edit&&!overview,Math.max(1,28*(camera.right-camera.left)/(camera.zoom*size.w*.69)));syncResidentLight(visitor);for(const e of comparisonEntries)syncResidentLight(e.visitor);for(const e of socialEntries)syncResidentLight(e.visitor);if(!photoSession){placeComparisonVisitors();placeSocialVisitors();updateResidentFaces();}bathroomEffects.update(objects,!edit&&!overview?visitorActivity:null,elapsed-visitorStart,reducedMotion);const reset=renderer.info.autoReset;renderer.info.autoReset=false;renderer.info.reset();let restoreForeground;try{if(firstPerson){if(homelyAttention?.close&&!photoSession){homelyForeground??=createHomelyForeground({renderer,scene,camera,resident,container:host.parentElement,stage});restoreForeground=homelyForeground.capture(homelyAttention.close,visitor?.getHeadWorldPosition?.());}else homelyForeground?.hide();}if(furnitureStyle==='toon'){camera.updateMatrixWorld();camera.matrixWorldInverse.copy(camera.matrixWorld).invert();characterLightDirection.value.copy(key.position).sub(key.target.position).normalize().transformDirection(camera.matrixWorldInverse);dropShadow.render(scene,camera,characterOutlineRoots(),key);}else dropShadow.off();
   // 外壳描边：toon 画风逐 mesh 背面外壳（宽度按正交相机换算成恒定屏幕像素），
   // 预算不足或复古画风时整层隐藏；宠物根首次入镜时补挂壳（幂等）。
   const shellsOn=furnitureStyle==='toon'&&furnitureOutlineEnabled&&lightBudget().outline;
@@ -195,7 +210,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(shellsOn)for(const r of petSystem?.outlineRoots()||[])addOutlineShells(r);
 if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){furnitureHalo.render(outlinedObjects,false);}
   else if(shellsOn){let thin=[];for(const root of characterOutlineRoots().concat(petSystem?.outlineRoots()||[]))root.traverse(o=>{if(o.userData.haloOutline)thin.push(o);});if(thin.length)furnitureHalo.render(thin,true);else renderer.render(scene,camera);}
-  else renderer.render(scene,camera);if(finishEnabled)roomFinish.render(lightPhase);
+  else renderer.render(scene,camera);if(finishEnabled)roomFinish.render(lightPhase,finishBlend);
   if(photoSession&&photoDofEnabled){
    // 部位对焦：绑定脸/身体时逐帧重取世界坐标，相机怎么动焦点都钉在角色身上。
    if(photoFocusPart){const t=photoSession.focusTarget(photoFocusPart.id);if(t)photoFocusDepth=camera.position.distanceTo(photoFocusPart.part==='body'?t.body:t.head);}
@@ -250,12 +265,26 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   }
   return texture;
  }
- function refreshRoomLighting(force=false){
-  const next=resolveRoomLightPhase(lightMode,timeZone);if(!force&&next===lightPhase)return false;
-  lightPhase=next;const p=ROOM_LIGHT_PHASES[next];updateRoomLightUniforms(lightUniforms,p);
+ // 换时段时 20 秒连续渐变而非整点跳变：灯色/环境/色罩逐帧插值，
+ // 背景纹理等重资产在半程一次性切换。
+ let phaseCurrent=null,phaseCurrentKey=null,phaseBlendFrom=null,phaseBlendFromKey=null,phaseBlendTargetKey=null,phaseBlendStart=0,phaseHeavyDone=false;
+ function applyPhase(p,heavy){
+  updateRoomLightUniforms(lightUniforms,p);
   hemi.color.set(p.sky);hemi.groundColor.set(p.ground);hemi.intensity=p.ambient;
   key.color.set(p.key);key.intensity=p.keyPower;fill.color.set(p.fill);fill.intensity=p.fillPower;
-  scene.background=onMenu?skyTexture(p.skyTop,p.skyBottom,p.ground,.28):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
+  if(heavy){scene.background=onMenu?skyTexture(p.skyTop,p.skyBottom,p.ground,.28):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();}
+ }
+ function updateCharacterTints(p){
+  // 角色染色调成插值档并占住 syncResidentLight 的缓存 key，避免跳变到目标档。
+  for(const v of [visitor,...socialEntries.map(e=>e.visitor),...comparisonEntries.map(e=>e.visitor)])if(v?.root){setCharacterRoomTint(v.root,p.character);residentLightPhases.set(v.root,lightPhase+':'+furnitureStyle);}
+ }
+ function refreshRoomLighting(force=false){
+  const next=resolveRoomLightPhase(lightMode,timeZone);if(next===lightPhase&&!phaseBlendFrom)return false;
+  lightPhase=next;const target=ROOM_LIGHT_PHASES[next];
+  if(!phaseCurrent){phaseCurrent=target;phaseCurrentKey=next;applyPhase(target,true);dirty=true;wake();return true;}
+  if(phaseBlendFrom&&phaseBlendTargetKey===next)return true;
+  // 正在过渡中改目标：以当前插值状态为新起点续接。
+  phaseBlendFrom=phaseCurrent;phaseBlendFromKey=phaseCurrentKey;phaseBlendTargetKey=next;phaseBlendStart=performance.now();phaseHeavyDone=false;
   dirty=true;wake();return true;
  }
  function scheduleRoomLighting(){

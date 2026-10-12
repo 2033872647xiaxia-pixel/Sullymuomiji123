@@ -1,6 +1,14 @@
 import * as T from 'three';
 import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
 
+// 各时段的辉光与色罩参数：换时段时由编辑器取两端插值，供连续过渡。
+export function finishParams(phase){
+ const glow=phase==='sunset'?.42:phase==='night'?.58:phase==='morning'?.26:.14;
+ const warmth=phase==='sunset'?1:phase==='night'?.55:phase==='morning'?.35:0;
+ const veil={morning:['#cfe2ff','#ffe3c2',.1],day:['#dcedff','#fff2de',.05],sunset:['#e6c2f6','#ffc893',.16],night:['#7d90e8','#b8a8d8',.17]}[phase]||['#dcedff','#fff2de',.05];
+ return {glow,warmth,veilTop:veil[0],veilBottom:veil[1],veilAmount:veil[2]};
+}
+
 // 多级辉光后期：亮部提取 → 逐级降采样模糊（1/2、1/4、1/8）→ 叠加回主画面。
 // 小半径级是锐利 bloom；大半径级把灯光池与窗光整片向外渗（diffusion），
 // 时段氛围由强度与暖色系数控制。所有 pass 都不带深度，模糊集中在低分辨率。
@@ -35,7 +43,7 @@ export function createRoomFinishPass(renderer){
     #include <colorspace_fragment>
    }`});
  const quad=new FullScreenQuad(material),extractQuad=new FullScreenQuad(extractMaterial),blurQuad=new FullScreenQuad(blurMaterial);
- return {render(phase){
+ return {render(phase,custom){
   renderer.getDrawingBufferSize(size);
   if(width!==size.x||height!==size.y){
    texture?.dispose();r2?.dispose();r4?.dispose();r8?.dispose();width=size.x;height=size.y;
@@ -46,10 +54,10 @@ export function createRoomFinishPass(renderer){
    material.uniforms.source.value=extractMaterial.uniforms.source.value=texture;
    material.uniforms.r2.value=r2.texture;material.uniforms.r4.value=r4.texture;material.uniforms.r8.value=r8.texture;
   }
-  material.uniforms.glow.value=phase==='sunset'?.42:phase==='night'?.58:phase==='morning'?.26:.14;
-  material.uniforms.warmth.value=phase==='sunset'?1:phase==='night'?.55:phase==='morning'?.35:0;
-  const veil={morning:['#cfe2ff','#ffe3c2',.1],day:['#dcedff','#fff2de',.05],sunset:['#e6c2f6','#ffc893',.16],night:['#7d90e8','#b8a8d8',.17]}[phase]||['#dcedff','#fff2de',.05];
-  material.uniforms.veilTop.value.set(veil[0]);material.uniforms.veilBottom.value.set(veil[1]);material.uniforms.veilAmount.value=veil[2];
+  const p=custom??finishParams(phase);
+  material.uniforms.glow.value=p.glow;
+  material.uniforms.warmth.value=p.warmth;
+  material.uniforms.veilTop.value.set(p.veilTop);material.uniforms.veilBottom.value.set(p.veilBottom);material.uniforms.veilAmount.value=p.veilAmount;
   renderer.copyFramebufferToTexture(texture);const clear=renderer.autoClear,target=renderer.getRenderTarget();renderer.autoClear=false;
   try{
    renderer.setRenderTarget(r2);extractQuad.render(renderer);
