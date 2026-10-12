@@ -209,12 +209,34 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   else{key.position.set(-3.8,9.5,7);key.target.position.set(0,.7,0);key.intensity=p.keyPower;key.color.set(p.key);}
   key.castShadow=sun||lightBudget().keyShadow&&!source;renderer.shadowMap.enabled=key.castShadow||!!source;invalidateRoomShadows();
  }
+ // 时段天空：竖向渐变背景（天顶→地平线亮带→地面色），俯瞰与房间外围露出的是
+ // 一整片有层次的天；底段取该时段地面色，与远景壳自然衔接。
+ const skyTextureCache=new Map();
+ function skyTexture(top,bottom,ground){
+  const key=top+'/'+bottom+'/'+ground;
+  let texture=skyTextureCache.get(key);
+  if(!texture){
+   const canvas=document.createElement('canvas');canvas.width=2;canvas.height=512;
+   const ctx=canvas.getContext('2d');
+   const grad=ctx.createLinearGradient(0,0,0,512);
+   const a=new THREE.Color(top),b=new THREE.Color(bottom),glow=b.clone().lerp(new THREE.Color('#ffffff'),.18),g=new THREE.Color(ground);
+   grad.addColorStop(0,'#'+a.getHexString());
+   grad.addColorStop(.42,'#'+glow.getHexString());
+   grad.addColorStop(.58,'#'+b.getHexString());
+   grad.addColorStop(1,'#'+g.getHexString());
+   ctx.fillStyle=grad;ctx.fillRect(0,0,2,512);
+   texture=new THREE.CanvasTexture(canvas);
+   texture.colorSpace=THREE.SRGBColorSpace;texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.LinearFilter;texture.generateMipmaps=false;
+   skyTextureCache.set(key,texture);
+  }
+  return texture;
+ }
  function refreshRoomLighting(force=false){
   const next=resolveRoomLightPhase(lightMode,timeZone);if(!force&&next===lightPhase)return false;
   lightPhase=next;const p=ROOM_LIGHT_PHASES[next];updateRoomLightUniforms(lightUniforms,p);
   hemi.color.set(p.sky);hemi.groundColor.set(p.ground);hemi.intensity=p.ambient;
   key.color.set(p.key);key.intensity=p.keyPower;fill.color.set(p.fill);fill.intensity=p.fillPower;
-  scene.background.set(p.background);if(onMenu)scene.background.set('#f8f8f0');windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
+  scene.background=onMenu?skyTexture('#f3f1ea','#f8f8f0','#efede8'):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
   dirty=true;wake();return true;
  }
  function scheduleRoomLighting(){
@@ -1949,7 +1971,7 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   inTick=false;if(homelyAttention||homelyMusic.playing&&!reducedMotion&&qualities[quality].motion||homelyMusic.weight>.001||homelyPoke||hasIdleResidents()||companionGesture||companionPhone||companionRise||companionIdle||companionTravel||companionFacing||companionSmile||petMoving||cameraArrival||settling||dirty||drag||walkFeedback.active||kitchenEffects.moving||animated.length&&!overview&&!reducedMotion&&qualities[quality].motion||visitor&&resident.visible&&!edit&&(!!socialRuntime?.active||!!walking||!!petSystem?.contactBusy||!!kitchenTask||!reducedMotion&&(qualities[quality].motion||!!conversation||elapsed<visitorUntil)))wake();
  }
  document.addEventListener('visibilitychange',()=>{if(document.hidden){petSystem?.life.save();clearTimeout(faceTimer);faceTimer=0;cancelAnimationFrame(frame);frame=0}else{if(refreshRoomLighting())renderUI();dirty=true;lastTick=performance.now();wake()}scheduleRoomLighting();},{signal:abort.signal});
- function dispose(){homelyForeground?.dispose();homelyForeground=null;parkedMealEffects?.dispose();parkedMealEffects=null;userSpeech=null;cancelCompanionAction();petSystem?.dispose();petSystem=null;interiorBackdrop.dispose();clearTimeout(tapTimer);lampGlow.dispose();walkFeedback.dispose();clearTimeout(faceTimer);faceTimer=0;clearTimeout(lightTimer);lightTimer=0;if(destroyed&&!kit)return;stopSocial();for(const e of [...socialEntries])removeSocialResident(e.id);gamingEffects.clear();clearComparison();visitor?.dispose();visitor=null;watering.dispose();mat.geometry.dispose();mat.material.dispose();kitchenEffects.dispose();kitchenWork.dispose();bathroomEffects.dispose();finishes.dispose();windowDaylight.dispose();resident.clear();destroyed=true;abort.abort(homeDisposalReason());observer.disconnect();cancelAnimationFrame(frame);controls.dispose();clearContent();for(const m of materialCache.values())m.dispose();materialCache.clear();kit?.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material]){for(const value of Object.values(m))if(value?.isTexture)value.dispose();m.dispose()}}});distantGeometry.dispose();for(const m of distantMaterials.values())m.dispose();distantMaterials.clear();key.shadow.dispose();grid.geometry.dispose();grid.material.dispose();footprint.geometry.dispose();footprint.material.dispose();for(const material of outlineMaterials)material.dispose();ground.geometry.dispose();ground.material.dispose();selection.geometry.dispose();selection.material.dispose();furnitureHalo.dispose();disposeOutlineShells();dropShadow.dispose();roomFinish.dispose();renderer.dispose();host.innerHTML='';host.classList.remove('home3d');}
+ function dispose(){homelyForeground?.dispose();homelyForeground=null;parkedMealEffects?.dispose();parkedMealEffects=null;userSpeech=null;cancelCompanionAction();petSystem?.dispose();petSystem=null;interiorBackdrop.dispose();clearTimeout(tapTimer);lampGlow.dispose();walkFeedback.dispose();clearTimeout(faceTimer);faceTimer=0;clearTimeout(lightTimer);lightTimer=0;if(destroyed&&!kit)return;stopSocial();for(const e of [...socialEntries])removeSocialResident(e.id);gamingEffects.clear();clearComparison();visitor?.dispose();visitor=null;watering.dispose();mat.geometry.dispose();mat.material.dispose();kitchenEffects.dispose();kitchenWork.dispose();bathroomEffects.dispose();finishes.dispose();windowDaylight.dispose();resident.clear();destroyed=true;abort.abort(homeDisposalReason());observer.disconnect();cancelAnimationFrame(frame);controls.dispose();clearContent();for(const m of materialCache.values())m.dispose();materialCache.clear();kit?.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material]){for(const value of Object.values(m))if(value?.isTexture)value.dispose();m.dispose()}}});distantGeometry.dispose();for(const m of distantMaterials.values())m.dispose();distantMaterials.clear();key.shadow.dispose();grid.geometry.dispose();grid.material.dispose();footprint.geometry.dispose();footprint.material.dispose();for(const material of outlineMaterials)material.dispose();ground.geometry.dispose();ground.material.dispose();selection.geometry.dispose();selection.material.dispose();furnitureHalo.dispose();disposeOutlineShells();for(const t of skyTextureCache.values())t.dispose();skyTextureCache.clear();dropShadow.dispose();roomFinish.dispose();renderer.dispose();host.innerHTML='';host.classList.remove('home3d');}
  signal?.addEventListener('abort',dispose,{once:true});
  try{
   [catalog,kit]=await Promise.all([fetch(new URL('catalog.json',assetBase),{signal:abort.signal,cache:'no-cache'}).then(r=>{if(!r.ok)throw Error('家具目录加载失败');return r.json()}),fetch(new URL('kit.glb',assetBase),{signal:abort.signal}).then(r=>{if(!r.ok)throw Error('家具模型加载失败');return r.arrayBuffer()}).then(data=>new GLTFLoader().parseAsync(data,assetBase))]);
