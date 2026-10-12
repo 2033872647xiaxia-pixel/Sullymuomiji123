@@ -9,9 +9,10 @@ export function roomPixelRatio(quality,deviceRatio,coarse=false){
 
 // Keep the same daylight composition on phones; spend on one cached window
 // shadow instead of a second full-scene outline pass or multiple shadow maps.
+// Clear tier keeps outlines on touch devices: the toon look depends on them.
 export function roomLightBudget(quality,coarse=false,overview=false){
  return {windows:overview?0:quality==='clear'&&!coarse?2:1,
   keyShadow:!overview&&!coarse&&quality!=='eco',
   shadowSize:quality==='clear'&&!coarse?2048:1024,
-  outline:!overview&&!coarse&&quality!=='eco'};
+  outline:!overview&&(quality==='clear'||!coarse&&quality!=='eco')};
 }

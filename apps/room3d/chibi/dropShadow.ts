@@ -1,7 +1,7 @@
 import * as T from 'three';
 
-// Screen-space drop shadow for the chibi cast, in the spirit of MMD's
-// PostDropHair (P.I.P): render the casters' silhouettes from the camera into
+// Screen-space drop shadow for the chibi cast: render the casters'
+// silhouettes from the camera into
 // a small render target, then let face/skin materials sample that mask with a
 // light-derived offset — bangs cast onto the face, garments onto hands.
 // Zero authored assets; the boundary follows the painted hair alpha because

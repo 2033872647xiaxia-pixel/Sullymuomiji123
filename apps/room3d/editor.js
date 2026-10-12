@@ -150,7 +150,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;renderer.shadowMap.autoUpdate=false;stage.append(renderer.domElement);
  let photoSession=null,photoPendingRoom=null;
  const camera=new THREE.OrthographicCamera(-5,5,5,-5,.1,200);camera.position.set(9,10,12);
- const furnitureHalo=createFurnitureHalo(renderer,scene,camera),roomFinish=createRoomFinishPass(renderer);furnitureHalo.setWidth(outlineWidth);
+ const furnitureHalo=createFurnitureHalo(renderer,scene,camera),roomFinish=createRoomFinishPass(renderer);furnitureHalo.setWidth(outlineWidth);furnitureHalo.setInk(furnitureStyle==='toon'?'#3a3542':'#756478');
  const dropShadow=createDropShadow(renderer);
  let outlinedObjects=[];
  const lightBudget=()=>roomLightBudget(quality,touch||phone,overview);
@@ -1208,7 +1208,7 @@ if((furnitureStyle==='retro'||furnitureStyle==='toon')&&furnitureOutlineEnabled&
     const cel=(furnitureStyle==='retro'&&!wall&&!asset(id)?.building)||(furnitureStyle==='toon'&&!asset(id)?.building);
     const sky=(id==='wooden_window'||asset(id)?.daylight===true)&&['glass','window-blue'].includes(m.name);
     const key=m.uuid+'/'+paint+'/'+furnitureStyle+'/'+(sky?o.geometry.uuid:'');usedMaterials.add(key);let c=materialCache.get(key);
-    if(!c){c=m.clone();if(cel)applyRetroFurniture(c,lightUniforms);if(paint)c.color.set(paint);if(asset(id)?.rugPattern)applyRugPattern(c,o.geometry,asset(id).rugPattern);if(sky)applyWindowSky(c,o.geometry,lightUniforms);if(c.transparent)c.depthWrite=false;materialCache.set(key,c)}
+    if(!c){c=m.clone();if(cel)applyRetroFurniture(c,lightUniforms,furnitureStyle==='toon'?{flat:true}:undefined);if(paint)c.color.set(paint);if(asset(id)?.rugPattern)applyRugPattern(c,o.geometry,asset(id).rugPattern);if(sky)applyWindowSky(c,o.geometry,lightUniforms);if(c.transparent)c.depthWrite=false;materialCache.set(key,c)}
     return c});if(o.material.length===1)o.material=o.material[0];
   });
  }
@@ -1634,6 +1634,7 @@ if((furnitureStyle==='retro'||furnitureStyle==='toon')&&furnitureOutlineEnabled&
   if(d.action==='turn-view'){if(viewMode==='flat')return;const offset=camera.position.clone().sub(controls.target);offset.applyAxisAngle(new THREE.Vector3(0,1,0),Number(d.angle));camera.position.copy(controls.target).add(offset);controls.update();dirty=true;wake();return}
   if(d.action==='furniture-outline'){furnitureOutlineEnabled=!furnitureOutlineEnabled;try{localStorage.setItem('sully-home3d-furniture-outline',furnitureOutlineEnabled?'on':'off')}catch{}dirty=true;wake();renderUI();return}
   if(d.action==='furniture-style'){const v=d.value;furnitureStyle=v==='original'?'original':v==='toon'?'toon':'retro';try{localStorage.setItem('sully-home3d-furniture-style',furnitureStyle)}catch{}
+   furnitureHalo.setInk(furnitureStyle==='toon'?'#3a3542':'#756478');
    finishes.dispose();finishes=createRoomFinishes(celContext());
    for(const m of distantMaterials.values())m.dispose();distantMaterials.clear();
    rebuild();renderUI();return}

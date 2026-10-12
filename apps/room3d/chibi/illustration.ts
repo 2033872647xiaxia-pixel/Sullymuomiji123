@@ -96,14 +96,13 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkDirect = dot(reflectedLight.directDiffuse,inkWeights)/inkBase;
             float inkSun = smoothstep(.18,.85,inkDirect);
             float inkRoomShade = mix(${material.userData.illustrationFace ? '.84' : '.68'},1.0,smoothstep(.18,.82,inkEnergy));
-            // Toon rooms: snap the smooth ramp to the same hard cel bands the
-            // environment shader uses, so residents sit inside the scene's
-            // shading instead of floating above it. Faces keep a higher floor
-            // and gentler steps to stay legible.
-            float celBand = ${material.userData.illustrationFace ? '.86' : '.74'}
-              + ${material.userData.illustrationFace ? '.05' : '.10'} * smoothstep(.28,.38,inkEnergy)
-              + ${material.userData.illustrationFace ? '.04' : '.10'} * smoothstep(.55,.67,inkEnergy)
-              + ${material.userData.illustrationFace ? '.05' : '.06'} * smoothstep(.88,1.02,inkEnergy);
+            // Toon rooms: binary shading on the body—one hard cut with narrow
+            // AA, matching the flattened environment bands. Faces keep a
+            // higher floor and gentler steps to stay legible.
+            float celBand = ${material.userData.illustrationFace ? `.86
+              + .05 * smoothstep(.28,.38,inkEnergy)
+              + .04 * smoothstep(.55,.67,inkEnergy)
+              + .05 * smoothstep(.88,1.02,inkEnergy)` : `0.70 + 0.30 * smoothstep(.43,.47,inkEnergy)`};
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
             ${material.userData.faceSdf ? `
@@ -137,7 +136,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v3-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v4-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

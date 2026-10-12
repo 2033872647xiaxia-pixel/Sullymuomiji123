@@ -49,6 +49,7 @@ export function createFurnitureHalo(renderer,scene,camera){
  }
  return {
   setWidth(px){material.uniforms.width.value=Math.max(.2,Math.min(2.5,Number(px)||.65));},
+  setInk(color){material.uniforms.ink.value.set(color);},
   render(objects){
    renderer.render(scene,camera);
    if(!objects.length){coverage=0;return;}
