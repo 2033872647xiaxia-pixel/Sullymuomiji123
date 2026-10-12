@@ -212,14 +212,15 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
  // 时段天空：竖向渐变背景（天顶→地平线亮带→地面色），俯瞰与房间外围露出的是
  // 一整片有层次的天；底段取该时段地面色，与远景壳自然衔接。
  const skyTextureCache=new Map();
- function skyTexture(top,bottom,ground){
-  const key=top+'/'+bottom+'/'+ground;
-  let texture=skyTextureCache.get(key);
-  if(!texture){
-   const canvas=document.createElement('canvas');canvas.width=2;canvas.height=512;
-   const ctx=canvas.getContext('2d');
-   const grad=ctx.createLinearGradient(0,0,0,512);
-   const a=new THREE.Color(top),b=new THREE.Color(bottom),glow=b.clone().lerp(new THREE.Color('#ffffff'),.18),g=new THREE.Color(ground);
+ function skyTexture(top,bottom,ground,soften=0){
+   const key=top+'/'+bottom+'/'+ground+'/'+soften;
+   let texture=skyTextureCache.get(key);
+   if(!texture){
+    const canvas=document.createElement('canvas');canvas.width=2;canvas.height=512;
+    const ctx=canvas.getContext('2d');
+    const grad=ctx.createLinearGradient(0,0,0,512);
+    const soft=new THREE.Color('#f8f8f0');
+    const a=new THREE.Color(top).lerp(soft,soften),b=new THREE.Color(bottom).lerp(soft,soften),glow=b.clone().lerp(new THREE.Color('#ffffff'),.18),g=new THREE.Color(ground).lerp(soft,soften);
    grad.addColorStop(0,'#'+a.getHexString());
    grad.addColorStop(.42,'#'+glow.getHexString());
    grad.addColorStop(.58,'#'+b.getHexString());
@@ -236,7 +237,7 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   lightPhase=next;const p=ROOM_LIGHT_PHASES[next];updateRoomLightUniforms(lightUniforms,p);
   hemi.color.set(p.sky);hemi.groundColor.set(p.ground);hemi.intensity=p.ambient;
   key.color.set(p.key);key.intensity=p.keyPower;fill.color.set(p.fill);fill.intensity=p.fillPower;
-  scene.background=onMenu?skyTexture('#f3f1ea','#f8f8f0','#efede8'):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
+  scene.background=onMenu?skyTexture(p.skyTop,p.skyBottom,p.ground,.55):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
   dirty=true;wake();return true;
  }
  function scheduleRoomLighting(){
