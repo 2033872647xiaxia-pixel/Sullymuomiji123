@@ -208,6 +208,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   outlineShellWidth.value=outlineWidth*(camera.right-camera.left)/camera.zoom/Math.max(1,renderer.domElement.clientWidth);
   if(shellsOn)for(const r of petSystem?.outlineRoots()||[])addOutlineShells(r);
 if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){furnitureHalo.render(outlinedObjects,false);}
+  else if(shellsOn){let thin=[];for(const root of characterOutlineRoots().concat(petSystem?.outlineRoots()||[]))root.traverse(o=>{if(o.userData.haloOutline)thin.push(o);});if(thin.length)furnitureHalo.render(thin,true);else renderer.render(scene,camera);}
   else renderer.render(scene,camera);if(finishEnabled)roomFinish.render(lightPhase);
   if(photoSession&&photoDofEnabled)photoDof.render({focus:photoFocusDepth,aperture:photoDofAperture,range:photoDofRange});}finally{restoreForeground?.();restorePoke?.();restorePresence?.();renderer.info.autoReset=reset;}}
  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=false;controls.enablePan=true;controls.screenSpacePanning=true;controls.target.set(0,2,0);
@@ -248,7 +249,7 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
     const ctx=canvas.getContext('2d');
     const grad=ctx.createLinearGradient(0,0,0,512);
     const soft=new THREE.Color('#f8f8f0');
-    const a=new THREE.Color(top).lerp(soft,soften),b=new THREE.Color(bottom).lerp(soft,soften),glow=b.clone().lerp(new THREE.Color('#ffffff'),.18),g=new THREE.Color(ground).lerp(soft,soften);
+    const a=new THREE.Color(top).lerp(soft,soften),b=new THREE.Color(bottom).lerp(soft,soften),glow=b.clone().lerp(new THREE.Color('#ffffff'),.08),g=new THREE.Color(ground).lerp(new THREE.Color('#2b2533'),.12);
    grad.addColorStop(0,'#'+a.getHexString());
    grad.addColorStop(.42,'#'+glow.getHexString());
    grad.addColorStop(.58,'#'+b.getHexString());
@@ -265,7 +266,7 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   lightPhase=next;const p=ROOM_LIGHT_PHASES[next];updateRoomLightUniforms(lightUniforms,p);
   hemi.color.set(p.sky);hemi.groundColor.set(p.ground);hemi.intensity=p.ambient;
   key.color.set(p.key);key.intensity=p.keyPower;fill.color.set(p.fill);fill.intensity=p.fillPower;
-  scene.background=onMenu?skyTexture(p.skyTop,p.skyBottom,p.ground,.55):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
+  scene.background=onMenu?skyTexture(p.skyTop,p.skyBottom,p.ground,.28):skyTexture(p.skyTop,p.skyBottom,p.ground);windowDaylight.setLighting(p.window,p.windowPower);configureWindowSun();
   dirty=true;wake();return true;
  }
  function scheduleRoomLighting(){
