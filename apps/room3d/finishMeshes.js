@@ -16,7 +16,7 @@ export function createRoomFinishes(cel=null){
   const key=(cel?'toon/':'')+[kind,style,color,trim].join('/');used.add(key);if(materials.has(key))return materials.get(key);
   // The floor is already above the shell. Depth bias here can pull it in front
   // of thin rugs; only wallpaper needs an offset from its supporting wall.
-  const m=new T.MeshStandardMaterial({color,roughness:kind==='floor'&&style==='marble'?.52:.93,polygonOffset:kind==='wall',polygonOffsetFactor:-2,polygonOffsetUnits:-2});m.name=[kind,style,color,trim].join('/');
+  const m=new T.MeshStandardMaterial({color,roughness:kind==='floor'&&style==='marble'?.48:.93,polygonOffset:kind==='wall',polygonOffsetFactor:-2,polygonOffsetUnits:-2});m.name=[kind,style,color,trim].join('/');
   const formula=kind==='floor'?{
    wood:'vec2 q=vec2(vFinishUV.x/1.8+mod(floor(vFinishUV.y/.34),2.)*.5,vFinishUV.y/.34); vec2 f=fract(q); float d=min(min(f.x,1.-f.x),min(f.y,1.-f.y));float aa=max(fwidth(d),.001);float line=1.-smoothstep(.012-aa,.012+aa,d); shade=-line*.20+.035*sin(floor(q.y)*2.3);',
    tile:'vec2 f=fract(vFinishUV/.72);float d=min(min(f.x,1.-f.x),min(f.y,1.-f.y));float aa=max(fwidth(d),.001);float line=1.-smoothstep(.012-aa,.012+aa,d);shade=line*.23;',

@@ -35,7 +35,7 @@ export function createRoomFinishPass(renderer){
     #include <colorspace_fragment>
    }`});
  const quad=new FullScreenQuad(material),extractQuad=new FullScreenQuad(extractMaterial),blurQuad=new FullScreenQuad(blurMaterial);
- return {render(phase){
+ return {render(phase,lampOn=true){
   renderer.getDrawingBufferSize(size);
   if(width!==size.x||height!==size.y){
    texture?.dispose();r2?.dispose();r4?.dispose();r8?.dispose();width=size.x;height=size.y;
@@ -46,9 +46,12 @@ export function createRoomFinishPass(renderer){
    material.uniforms.source.value=extractMaterial.uniforms.source.value=texture;
    material.uniforms.r2.value=r2.texture;material.uniforms.r4.value=r4.texture;material.uniforms.r8.value=r8.texture;
   }
-  material.uniforms.glow.value=phase==='sunset'?.42:phase==='night'?.5:phase==='morning'?.26:.14;
+  // 关灯的深夜没有灯光池：辉光收敛到月光水平，色罩换成更浓的深蓝紫。
+  const lightsOut=phase==='night'&&!lampOn;
+  material.uniforms.glow.value=lightsOut?.26:phase==='sunset'?.42:phase==='night'?.58:phase==='morning'?.26:.14;
   material.uniforms.warmth.value=phase==='sunset'?1:phase==='night'?.55:phase==='morning'?.35:0;
-  const veil={morning:['#cfe2ff','#ffe3c2',.1],day:['#dcedff','#fff2de',.05],sunset:['#e6c2f6','#ffc893',.16],night:['#8fa2e6','#c6b6d8',.13]}[phase]||['#dcedff','#fff2de',.05];
+  const veil={morning:['#cfe2ff','#ffe3c2',.1],day:['#dcedff','#fff2de',.05],sunset:['#e6c2f6','#ffc893',.16],night:['#7d90e8','#b8a8d8',.17]}[phase]||['#dcedff','#fff2de',.05];
+  if(lightsOut)veil[0]='#4a5aa0',veil[1]='#7a6aa8',veil[2]=.24;
   material.uniforms.veilTop.value.set(veil[0]);material.uniforms.veilBottom.value.set(veil[1]);material.uniforms.veilAmount.value=veil[2];
   renderer.copyFramebufferToTexture(texture);const clear=renderer.autoClear,target=renderer.getRenderTarget();renderer.autoClear=false;
   try{

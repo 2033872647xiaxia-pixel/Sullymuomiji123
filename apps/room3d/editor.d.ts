@@ -10,7 +10,7 @@ export interface HomeEditor {setHomelyMusic?(value:{playing:boolean;position:num
 export interface HomeEditor {setViewMode(mode:'flat'|'free'):void}
 export interface HomeEditor {setLightingMode(mode:'auto'|'morning'|'day'|'sunset'|'night'):void;setTimeZone(timeZone?:string):void}
 export interface HomeEditor {setPrimaryResidentId(id:string,label?:string):void;setSocialResident(id:string,visitor:ChibiVisitor,label?:string):void;removeSocialResident(id:string):void;playSocial(action:string,a:string,b?:string):Promise<boolean>;cancelSocial():void}
-export interface HomeEditor {dispose():void;setSuspended?(value:boolean):void;setVisitor?(visitor:ChibiVisitor|null,options?:{preservePose?:boolean}):void;getState?():Home3DState;inspect?():unknown;advanceTime?(ms:number):void}
+export interface HomeEditor {dispose():void;setSuspended?(value:boolean):void;setVisitor?(visitor:ChibiVisitor|null,options?:{preservePose?:boolean}):void;getState?():Home3DState;inspect?():unknown;advanceTime?(ms:number):void;setNightLamp(on:boolean):void;getNightLamp():boolean;getLightPhase():string}
 export function mountHomeEditor(host:HTMLElement,options:{assetBase:string;firstPerson?:boolean;initialState?:Home3DState;onChange?:(state:Home3DState)=>void;onBack?:()=>void;onMenu?:(name:string,targetId?:string)=>void;storageKey?:string;signal?:AbortSignal;timeZone?:string;thumbnailExport?:(images:Record<string,string>)=>void|Promise<void>}):Promise<HomeEditor>;
 
 export interface HomeEditor {getResidentAnchor?(id?:string):{x:number;y:number;width:number;height:number;headTopY?:number}|null}

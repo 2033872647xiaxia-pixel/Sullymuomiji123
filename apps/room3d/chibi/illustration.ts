@@ -118,7 +118,9 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkEnergy = dot(totalDiffuse,inkWeights)/inkBase;
             // directDiffuse includes window occlusion and the actual light direction.
             float inkDirect = dot(reflectedLight.directDiffuse,inkWeights)/inkBase;
-            float inkSun = smoothstep(.18,.85,inkDirect);
+            // 直射档量化成窄 AA 硬切：光打上来是整片一档，不随强度渐变——
+            // 连续提亮是「物理感」的来源，卡通的色阶要一刀切。
+            float inkSun = smoothstep(.30,.34,inkDirect);
             float inkRoomShade = mix(${material.userData.illustrationFace ? '.84' : '.68'},1.0,smoothstep(.18,.82,inkEnergy));
             // Toon rooms: the body snaps into two hard bands. The face skips the
             // physical band entirely—it stays fully lit and gets ALL of its
@@ -137,7 +139,11 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float faceSweep = clamp(dot(normalize(characterLightDirection), faceRight), -1., 1.);
             float faceCut = -faceSweep * (vMapUv.x * 2.0 - 1.0) * .9;
             float faceAa = max(fwidth(faceField) * 1.5, 0.02);
-            float faceShadow = (1.0 - smoothstep(faceCut - faceAa, faceCut + faceAa, faceField)) * characterCel;
+            // 刘海正下的环带像画上去的一样恒定在影里，不随光位消失；
+            // 随光扫动的只有发际线以下的大片影（faceCut 倾斜）。
+            float bangShadow = 1.0 - smoothstep(-.25 - faceAa, -.25 + faceAa, faceField);
+            float sweepShadow = 1.0 - smoothstep(faceCut - faceAa, faceCut + faceAa, faceField);
+            float faceShadow = max(bangShadow, sweepShadow) * characterCel;
             inkRoomShade = mix(inkRoomShade, .75, faceShadow);` : material.userData.illustrationFace || material.userData.illustrationSkin ? `
             // 屏幕空间落影（前发/衣片 → 脸与皮肤）：按主光方向偏移采样剪影蒙版，
             // 命中处直接压进阴影档，颜色随下方的偏色一起换。无 SDF 的脸部走这条兜底。
@@ -157,11 +163,11 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             inkShadowTint = mix(inkShadowTint, inkBounce, .22);
             inkRoom *= mix(vec3(1.0), inkShadowTint, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
-            // 边缘光：背向主光一侧的窄硬亮带（脸部不加）。只提亮一档固有色，
-            // 不加白不曝；硬边窄带才是 2D 卡通的高光画法。
+            // 边缘光（脸部不加）：整圈轮廓都有窄硬亮带，受光侧弱、背光侧强，
+            // 不再整半边归零——2D 卡通的 rim 画在轮廓上，不挑光位。
             float inkBack = 1.0 - smoothstep(-.1,.1,dot(normal, normalize(characterLightDirection)));
             float inkGrazing = 1.0 - abs(dot(normal, normalize(vViewPosition)));
-            float inkRim = smoothstep(.68,.73,inkGrazing)*inkBack;
+            float inkRim = smoothstep(.58,.66,inkGrazing) * mix(.35,1.0,inkBack);
             inkRoom = mix(inkRoom,inkSkin*1.18+vec3(.04),inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
             ${eyeMask ? `
@@ -171,7 +177,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v10-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v12-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

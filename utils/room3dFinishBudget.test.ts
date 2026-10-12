@@ -14,7 +14,7 @@ it('blurs the bloom chain at low resolutions, reusing buffers',()=>{
  expect(draws[3].target).toBeNull();
  expect(draws[3].uniforms.source.value.image).toMatchObject({width:1170,height:2532});
  const source=draws[3].uniforms.source.value,disposed=vi.fn();for(const rt of buffers)rt.addEventListener('dispose',disposed);
- finish.render('night');expect(buffers).toHaveLength(3);expect(draws[7].uniforms.source.value).toBe(source);expect(draws[7].uniforms.glow.value).toBe(.5);
+ finish.render('night');expect(buffers).toHaveLength(3);expect(draws[7].uniforms.source.value).toBe(source);expect(draws[7].uniforms.glow.value).toBe(.58);
  width=2532;height=1170;finish.render('sunset');expect(disposed).toHaveBeenCalledTimes(3);expect(buffers[3]).toMatchObject({width:1266,height:585});expect(buffers[4]).toMatchObject({width:633,height:293});expect(buffers[5]).toMatchObject({width:317,height:147});
  expect(renderer.autoClear).toBe(true);expect(target).toBeNull();finish.dispose();
 });

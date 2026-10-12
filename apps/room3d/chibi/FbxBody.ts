@@ -137,7 +137,16 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const faceKeys=appearance==='outfit'&&!blank?['facemark','eyes','mouth','outfit','faceDecor']:['facemark','eyes','mouth','faceDecor'];
     const front=keep(new T.MeshStandardMaterial({map:makeTexture(faceKeys,skin),roughness:1}));
     front.userData.illustrationFace=true;
-    if(refreshEyeMask())front.userData.eyeMask=eyeMaskTexture;
+    // 眼底微光只在睁眼时挂载：闭眼/挤眼/眨眼帧摘掉遮罩，
+    // 否则闭眼贴图下仍透出发光的「眼白」。
+    let eyeMaskValid=false;
+    if(refreshEyeMask()){front.userData.eyeMask=eyeMaskTexture;eyeMaskValid=true;}
+    const applyEyeGlow=(eyes:'open'|'closed'|'happy')=>{
+        const want=eyes==='open'&&eyeMaskValid;
+        if(!!front.userData.eyeMask===want)return;
+        if(want)front.userData.eyeMask=eyeMaskTexture;else delete front.userData.eyeMask;
+        front.needsUpdate=true;
+    };
     // 前发 SDF：卡通画风的脸部阴影贴图，随部件形状逐角色生成；无前发则留空回落屏幕落影。
     const faceSdf=makeFaceSdf(parts.fronthair as HTMLImageElement|HTMLCanvasElement|undefined,blank?16:0);
     if(faceSdf){keep(faceSdf);front.userData.faceSdf=faceSdf;}
@@ -147,6 +156,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const expressionMaps=new Map<string,T.Texture>();
     const clearExpressionMaps=()=>{for(const map of expressionMaps.values()){map.dispose();const i=resources.indexOf(map);if(i>=0)resources.splice(i,1);}expressionMaps.clear();};
     const setExpressionFace=(eyes:'open'|'closed'|'happy',mouth:'base'|'closed'|'open'|'smile'='base')=>{
+        applyEyeGlow(eyes);
         if(mouth==='base'){front.map=eyes==='closed'?asleepMap:eyes==='happy'?cuteMap:awakeMap;return;}
         const key=eyes+':'+mouth;let map=expressionMaps.get(key);
         if(!map){map=makeTexture(faceKeys,skin,eyes==='closed'?'sleep':eyes==='happy'?'squeeze':'original',undefined,mouth);expressionMaps.set(key,map);}
@@ -160,6 +170,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         makeTexture(faceKeys,skin,'original',awakeMap!);
         makeTexture(faceKeys,skin,'sleep',asleepMap);
         makeTexture(faceKeys,skin,'squeeze',cuteMap);
+        if(eyeMaskValid)refreshEyeMask();
     };
     const setFaceSettings=async(value?:FaceSettings)=>{
         const version=++faceVersion,next=value?cleanFace(value):undefined;
@@ -170,13 +181,15 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         makeTexture(faceKeys,skin,'original',awakeMap!);
         makeTexture(faceKeys,skin,'sleep',asleepMap);
         makeTexture(faceKeys,skin,'squeeze',cuteMap);
-        if(refreshEyeMask())front.userData.eyeMask=eyeMaskTexture;
+        if(refreshEyeMask()){front.userData.eyeMask=eyeMaskTexture;eyeMaskValid=true;}else{delete front.userData.eyeMask;eyeMaskValid=false;}
         front.map=awakeMap;front.needsUpdate=true;
     };
     const updateFace=(time:number)=>{
         if(!faceSettings?.enabled||!faceImages)return;
         const canBlink=faceSettings.blink&&(faceSettings.eyeState==='open'||faceSettings.eyeState==='half')&&faceSettings.upper!=='04';
-        front.map=canBlink&&time%4.3>4.12?asleepMap:awakeMap;
+        const blink=canBlink&&time%4.3>4.12;
+        front.map=blink?asleepMap:awakeMap;
+        applyEyeGlow(blink?'closed':'open');
     };
     const back=keep(new T.MeshStandardMaterial({color:skin,roughness:1}));
     back.userData.illustrationSkin=true;
