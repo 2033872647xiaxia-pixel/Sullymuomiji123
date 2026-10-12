@@ -60,6 +60,25 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const facePlacement={eyes:{x:0,y:blank?-16:0},mouth:{x:0,y:blank?-16:0}};
     let faceSettings:FaceSettings|undefined,faceImages:Awaited<ReturnType<typeof loadFaceImages>>|undefined,faceVersion=0,disposed=false;
     keep({dispose(){disposed=true;faceVersion++;}});
+    // 眼睛区域遮罩：与眼睛部件同变换绘制其 alpha。除供着色器给眼底加微弱
+    // 自发光外，闭眼贴图也用它把装饰层画进眼区的内容盖掉。
+    const eyeMaskCanvas=document.createElement('canvas');eyeMaskCanvas.width=eyeMaskCanvas.height=472;
+    const eyeMaskTexture=keep(new T.CanvasTexture(eyeMaskCanvas));
+    let eyeMaskValid=false;
+    const refreshEyeMask=()=>{
+        const mctx=eyeMaskCanvas.getContext('2d')!;
+        mctx.clearRect(0,0,472,472);
+        const splitFace=faceSettings?.enabled&&faceImages?composeFace(faceSettings,faceImages,faceSettings.eyeState):undefined;
+        const drawable=splitFace&&!faceSettings?.useBaseEyes?splitFace.eyes:faceSettings?.useBaseEyes&&parts['eyes']?colorBaseEyes(parts['eyes'],parts['eyes-raw'],faceSettings):parts['eyes'];
+        if(!drawable)return false;
+        mctx.save();
+        mctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
+        mctx.transform(.97,0,0,.96,237*.03,268*.04-8);
+        mctx.drawImage(drawable,0,0,472,472);
+        mctx.restore();
+        eyeMaskTexture.needsUpdate=true;
+        return true;
+    };
     const makeTexture=(keys:string[],fill?:string,eyes:'original'|'sleep'|'squeeze'='original',target?:T.Texture,mouth:'base'|'closed'|'open'|'smile'='base')=>{
         // Supersample only the facial atlas, preserving the original 472px
         // artwork coordinates. This avoids extra loss when positioning features.
@@ -69,6 +88,19 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         ctx.scale(resolution,resolution);ctx.imageSmoothingQuality='high';
         if(fill){ctx.fillStyle=fill;ctx.fillRect(0,0,472,472);}
         const splitFace=faceSettings?.enabled&&faceImages?composeFace(mouth==='base'?faceSettings:{...faceSettings,mouth:faceSettings.mouths?.[mouth]??faceSettings.mouth},faceImages,eyes==='sleep'?'closed':eyes==='squeeze'?'happy':faceSettings.eyeState):undefined;
+        // 闭眼/挤眼的笔画线（调用处需已在眼睛位移与缩放变换内）。
+        const closedEyeStrokes=(state:'sleep'|'squeeze')=>{
+            if(state==='squeeze'){
+                ctx.strokeStyle='#514747';ctx.lineWidth=7;ctx.lineCap='round';ctx.lineJoin='round';
+                // Draw > on the left and < on the right in the original eye area.
+                for(const [x,direction] of [[177,1],[297,-1]]){
+                    ctx.beginPath();ctx.moveTo(x-direction*18,252);ctx.lineTo(x+direction*18,270);ctx.lineTo(x-direction*18,288);ctx.stroke();
+                }
+            }else{
+                ctx.strokeStyle='#514747';ctx.lineWidth=6;ctx.lineCap='round';
+                for(const x of [177,297]){ctx.beginPath();ctx.moveTo(x-25,270);ctx.quadraticCurveTo(x,288,x+25,270);ctx.stroke();}
+            }
+        };
         keys.forEach(k=>{
             const drawable=k==='faceDecor'?faceDecor:k==='outfit'?garment:k==='eyes'&&splitFace&&!faceSettings?.useBaseEyes?splitFace.eyes:k==='mouth'&&splitFace&&(!faceSettings?.useBaseMouth||mouth!=='base')?splitFace.mouth:k==='eyes'&&faceSettings?.useBaseEyes&&parts[k]?colorBaseEyes(parts[k],parts['eyes-raw'],faceSettings):parts[k];
             if(!drawable&&!(k==='mouth'&&mouth!=='base'))return;
@@ -89,14 +121,9 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
             // Garments/hair retain their original registration against the body.
             if(k==='eyes'||k==='mouth'||k==='facemark')ctx.transform(.97,0,0,.96,237*.03,268*.04-8);
             if(k==='eyes'&&(!splitFace||faceSettings?.useBaseEyes)&&eyes==='squeeze'){
-                ctx.strokeStyle='#514747';ctx.lineWidth=7;ctx.lineCap='round';ctx.lineJoin='round';
-                // Draw > on the left and < on the right in the original eye area.
-                for(const [x,direction] of [[177,1],[297,-1]]){
-                    ctx.beginPath();ctx.moveTo(x-direction*18,252);ctx.lineTo(x+direction*18,270);ctx.lineTo(x-direction*18,288);ctx.stroke();
-                }
+                closedEyeStrokes('squeeze');
             }else if(k==='eyes'&&(!splitFace||faceSettings?.useBaseEyes)&&eyes==='sleep'){
-                ctx.strokeStyle='#514747';ctx.lineWidth=6;ctx.lineCap='round';
-                for(const x of [177,297]){ctx.beginPath();ctx.moveTo(x-25,270);ctx.quadraticCurveTo(x,288,x+25,270);ctx.stroke();}
+                closedEyeStrokes('sleep');
             }else if(k==='mouth'&&mouth!=='base'&&!splitFace){
                 ctx.strokeStyle='#664549';ctx.fillStyle='#804b55';ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();
                 if(mouth==='open'){ctx.ellipse(237,312,7,9,0,0,Math.PI*2);ctx.fill();}
@@ -104,6 +131,22 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
             }else ctx.drawImage(drawable!,0,0,472,472);
             ctx.restore();
         });
+        if((eyes==='sleep'||eyes==='squeeze')&&eyeMaskValid){
+            // 装饰与脸纹层不随表情变化：若把内容画进了眼区（眼白、妆效），
+            // 闭眼贴图下会透出来。按眼罩把眼区重铺肤色（边缘随遮罩渐变），
+            // 再补一遍闭眼笔画。
+            const patch=document.createElement('canvas');patch.width=patch.height=472;
+            const pctx=patch.getContext('2d')!;
+            pctx.drawImage(eyeMaskCanvas,0,0,472,472);
+            pctx.globalCompositeOperation='source-in';
+            pctx.fillStyle=fill??skin;pctx.fillRect(0,0,472,472);
+            ctx.save();
+            ctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
+            ctx.transform(.97,0,0,.96,237*.03,268*.04-8);
+            ctx.drawImage(patch,0,0,472,472);
+            closedEyeStrokes(eyes==='squeeze'?'squeeze':'sleep');
+            ctx.restore();
+        }
         const texture=target??keep(new T.CanvasTexture(canvas));texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;
         if(facial){texture.anisotropy=4;texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearMipmapLinearFilter;}
         return texture;
@@ -115,31 +158,12 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         if(!rear)canvas.getContext('2d')!.drawImage(bodyDecor,0,0);
         const map=keep(new T.CanvasTexture(canvas));map.colorSpace=T.SRGBColorSpace;return map;
     };
-    // 眼睛区域遮罩：与眼睛部件同变换绘制其 alpha，供着色器给眼底加微弱自发光。
-    const eyeMaskCanvas=document.createElement('canvas');eyeMaskCanvas.width=eyeMaskCanvas.height=472;
-    const eyeMaskTexture=keep(new T.CanvasTexture(eyeMaskCanvas));
-    const refreshEyeMask=()=>{
-        const mctx=eyeMaskCanvas.getContext('2d')!;
-        mctx.clearRect(0,0,472,472);
-        const splitFace=faceSettings?.enabled&&faceImages?composeFace(faceSettings,faceImages,faceSettings.eyeState):undefined;
-        const drawable=splitFace&&!faceSettings?.useBaseEyes?splitFace.eyes:faceSettings?.useBaseEyes&&parts['eyes']?colorBaseEyes(parts['eyes'],parts['eyes-raw'],faceSettings):parts['eyes'];
-        if(!drawable)return false;
-        mctx.save();
-        mctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
-        mctx.transform(.97,0,0,.96,237*.03,268*.04-8);
-        mctx.drawImage(drawable,0,0,472,472);
-        mctx.restore();
-        eyeMaskTexture.needsUpdate=true;
-        return true;
-    };
     const frontCloth=keep(new T.MeshStandardMaterial({map:appearance==='outfit'?garmentMap(false):makeTexture([],skin),roughness:1}));
     frontCloth.userData.illustrationCast=true;
     const faceKeys=appearance==='outfit'&&!blank?['facemark','eyes','mouth','outfit','faceDecor']:['facemark','eyes','mouth','faceDecor'];
     const front=keep(new T.MeshStandardMaterial({map:makeTexture(faceKeys,skin),roughness:1}));
     front.userData.illustrationFace=true;
-    // 眼底微光只在睁眼时挂载：闭眼/挤眼/眨眼帧摘掉遮罩，
-    // 否则闭眼贴图下仍透出发光的「眼白」。
-    let eyeMaskValid=false;
+    // 眼底微光只在睁眼时挂载：闭眼/挤眼/眨眼帧摘掉遮罩。
     if(refreshEyeMask()){front.userData.eyeMask=eyeMaskTexture;eyeMaskValid=true;}
     const applyEyeGlow=(eyes:'open'|'closed'|'happy')=>{
         const want=eyes==='open'&&eyeMaskValid;

@@ -31,6 +31,11 @@ export function createPhotoSession({actors,camera,controls,invalidate}){
    return ()=>{for(const {e,head,q} of heads){head.quaternion.copy(q);e.person.finishPose?.();}};
   },
   actors:entries.map(e=>({id:e.id,label:e.label})),
+  focusTarget(id){const e=entries.find(e=>e.id===id);if(!e)return null;
+   // 对焦部位的世界坐标：头部（脸）与躯干中心（全身）；相机移动时由编辑器逐帧重取。
+   const head=e.person.getHeadWorldPosition?.()??e.root.getWorldPosition(new THREE.Vector3());
+   const body=e.root.getWorldPosition(new THREE.Vector3());body.y+=.55;
+   return {head,body};},
   camera(values){({yaw,pitch,zoom,height,pan}={yaw,pitch,zoom,height,pan,...values});aim();},
   together(gap=.85){cancelPair();entries.forEach((e,i)=>{revisions.set(e.id,(revisions.get(e.id)||0)+1);e.person.animate(0,'idle','standing');e.root.position.set(center.x+(i-(entries.length-1)/2)*gap,center.y,center.z);e.root.rotation.set(0,0,0,'YXZ');});aim();},
   async pose(id,motion,time=1){const e=entries.find(e=>e.id===id);if(!e||closed)return;cancelPair();const version=(revisions.get(id)||0)+1;revisions.set(id,version);if(photoLibrary.some(p=>p.id===motion&&p.participants===1)){const clip=await loadPhotoClip(motion);if(closed||revisions.get(id)!==version)return;e.person.applySelectedFrame(sampleSelected(clip.actors[0],time));e.person.finishPose?.();invalidate();return;} if(motion==='original'){const pos=e.root.position.clone(),q=e.root.quaternion.clone();for(const t of e.transforms){t.o.position.copy(t.p);t.o.quaternion.copy(t.q);t.o.scale.copy(t.s);}e.root.position.copy(pos);e.root.quaternion.copy(q);}else if(['idle','dance','angry'].includes(motion))e.person.animate(time,motion,'standing');e.person.finishPose?.();invalidate();},

@@ -17,7 +17,7 @@ export function createLampGlow(){
     gl_PointSize=diameter*projectionMatrix[1][1]*viewportHeight*.5;}`,
   fragmentShader:`void main(){float r=length(gl_PointCoord-.5)*2.;
    float edge=1.-smoothstep(.65,1.,r);
-   float halo=(exp(-r*r*5.)*.17+exp(-r*r*22.)*.23)*edge;
+   float halo=(exp(-r*r*5.)*.13+exp(-r*r*22.)*.19)*edge;
    gl_FragColor=vec4(1.,.63,.28,halo);
    #include <colorspace_fragment>
   }`});
@@ -44,7 +44,7 @@ export function createLampGlow(){
   for(const s of sources){
    if(!visible(s.mesh))continue;
    s.mesh.updateWorldMatrix(true,false);point.copy(s.center).applyMatrix4(s.mesh.matrixWorld);s.mesh.getWorldScale(scale);
-   if(lit<lightLimit){const light=lights[lit++];light.position.copy(point);light.position.y+=.3;light.intensity=enabled?2.1:0;}
+   if(lit<lightLimit){const light=lights[lit++];light.position.copy(point);light.position.y+=.3;light.intensity=enabled?1.1:0;}
    point.toArray(positions,count*3);
    diameters[count]=T.MathUtils.clamp(Math.max(s.size.x*scale.x,s.size.y*scale.y,s.size.z*scale.z)*3.4,.65,2.3);count++;
   }
