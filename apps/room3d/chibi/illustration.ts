@@ -164,11 +164,14 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             inkRoom *= mix(vec3(1.0), inkShadowTint, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
             // 边缘光（脸部不加）：整圈轮廓都有窄硬亮带，受光侧弱、背光侧强，
-            // 不再整半边归零——2D 卡通的 rim 画在轮廓上，不挑光位。
+            // 不挑光位。rim 吃环境反弹与直射色相（保亮度）：白天白亮、夕阳
+            // 金粉、夜晚月光蓝紫——有色 rim 暗示灯光的存在，不一味提白。
             float inkBack = 1.0 - smoothstep(-.1,.1,dot(normal, normalize(characterLightDirection)));
             float inkGrazing = 1.0 - abs(dot(normal, normalize(vViewPosition)));
             float inkRim = smoothstep(.58,.66,inkGrazing) * mix(.35,1.0,inkBack);
-            inkRoom = mix(inkRoom,inkSkin*1.18+vec3(.04),inkRim*characterCel);`}
+            vec3 inkRimTone = mix(inkBounce, roomSunTint, inkSun*.6);
+            inkRimTone /= max(dot(inkRimTone, inkWeights), .56);
+            inkRoom = mix(inkRoom,(inkSkin*1.18+vec3(.04))*inkRimTone,inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
             ${eyeMask ? `
             // 眼睛微光：眼底一层若有若无的自发光（夜里「眼里有光」）。
@@ -177,7 +180,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v12-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v13-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
