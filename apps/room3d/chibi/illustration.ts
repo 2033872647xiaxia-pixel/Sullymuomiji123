@@ -98,6 +98,19 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
               float midBand = smoothstep(.16,.26,skinLum)*(1.-smoothstep(.72,.88,skinLum));
               inkSkin = mix(inkSkin,inkSkin*pow(max(skinLum,.001),-.5),midBand*characterCel);
             }` : ''}
+            ${material.userData.illustrationHair && material.map ? `{
+              // 固有色渐变：发根→发梢的色带（贴图 UV 竖向，v 高为头顶），对应平涂
+              // 「涂固有色」环节的分层上色——纯色块升级为有层次的动画质感。
+              float rootBand = smoothstep(.45,.7,vMapUv.y);
+              float tipBand = 1.-smoothstep(.15,.45,vMapUv.y);
+              inkSkin *= mix(vec3(1.),vec3(.92,.91,1.03),rootBand*.34*characterCel);
+              inkSkin *= mix(vec3(1.),vec3(1.05,1.0,.94),tipBand*.26*characterCel);
+            }` : ''}
+            ${(material.userData.illustrationFace || material.userData.illustrationSkin) && material.map ? `{
+              // 皮肤固有色微渐变：上亮下微暖，大片肤色不再是一个死色（幅度极轻，不抢腮红）。
+              float skinFall = smoothstep(.2,.8,vMapUv.y);
+              inkSkin *= mix(vec3(.99,.975,1.005),vec3(1.02,1.01,.985),skinFall*.5*characterCel);
+            }` : ''}
             vec3 inkPreview = inkSkin * inkShade * inkTint * characterRoomTint;
             float inkBase = max(dot(inkSkin,inkWeights),.001);
             float inkEnergy = dot(totalDiffuse,inkWeights)/inkBase;
@@ -133,9 +146,12 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             vec3 inkBounce = mix(roomBounceDown,roomBounceUp,inkWorldN.y*.5+.5);
             vec3 inkRoomTint = mix(mix(roomShadeTint,inkBounce,.3),roomSunTint,inkSun);
             vec3 inkRoom = inkSkin * inkRoomShade * inkRoomTint * roomBrightness;
-            // 卡通阴影偏色：阴影档不压黑，而是整体向玫瑰→紫的方向换色（脸部更轻）。
+            // 色见本：阴影色各部位不一致——发影偏蓝紫更深、肤色影偏粉、衣身影偏紫；
+            // 再按表面朝向混入环境反弹色（与场景阴影同逻辑），阴影不是全画面一个死色。
             float celDepth = clamp((1.0 - inkRoomShade) * 1.6, 0.0, 1.0);
-            inkRoom *= mix(vec3(1.0), ${material.userData.illustrationFace ? 'vec3(.97,.93,1.04)' : 'vec3(.93,.87,1.08)'}, celDepth * characterCel);
+            vec3 inkShadowTint = ${material.userData.illustrationHair ? 'vec3(.90,.83,1.13)' : material.userData.illustrationFace ? 'vec3(.97,.92,1.05)' : 'vec3(.94,.87,1.07)'};
+            inkShadowTint = mix(inkShadowTint, inkBounce, .22);
+            inkRoom *= mix(vec3(1.0), inkShadowTint, celDepth * characterCel);
             ${material.userData.illustrationFace ? '' : `
             // 边缘光：背向主光一侧的窄硬亮带（脸部不加）。只提亮一档固有色，
             // 不加白不曝；硬边窄带才是 2D 卡通的高光画法。
@@ -147,7 +163,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v6-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v7-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

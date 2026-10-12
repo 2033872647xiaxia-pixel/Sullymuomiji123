@@ -44,6 +44,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
     const garment=composeGarments(parts,{outfit:hair?.layers.outfit?.length??1,outer:hair?.layers.outer?.length??1});
     const frontScalp=keep(new T.MeshStandardMaterial({color:average(parts.fronthair),roughness:1}));
     const rearScalp=keep(new T.MeshStandardMaterial({color:average(parts.back1||parts.back2||parts.fronthair),roughness:1}));
+    frontScalp.userData.illustrationHair=true;rearScalp.userData.illustrationHair=true;
     // Match the actual face/body material boundary (model y=.60) in the original
     // 472px canvas. Split spatially, so several rolled decorations can land on
     // different surfaces without classifying the whole decor layer as one item.
@@ -278,6 +279,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
                 geometry.computeVertexNormals();
                 const face=keep(new T.MeshStandardMaterial({map:makeTexture(keys),alphaTest:.2,side:T.DoubleSide,roughness:1}));
                 const rim=keep(new T.MeshStandardMaterial({color:average(image),side:T.DoubleSide,roughness:1}));
+                face.userData.illustrationHair=true;rim.userData.illustrationHair=true;
                 // 前发参与屏幕空间落影（投在脸上）；后发在头后，投出来会盖住脸，不参与。
                 if(!rear){face.userData.illustrationCast=true;rim.userData.illustrationCast=true;}
                 const sheet=new T.Mesh(geometry,[face,rim]);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.userData.hairConstruction='paired-sheets';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
@@ -305,6 +307,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
             // Keep the new authored back-hair strands and shading. The inner
             // liner still uses an average color to avoid mirrored texture seams.
             const material=keep(new T.MeshStandardMaterial({map,alphaTest:.2,side:T.DoubleSide,roughness:1}));
+            material.userData.illustrationHair=true;
             if(!rear)material.userData.illustrationCast=true;
             const sheet=new T.Mesh(geometry,material);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
             if(solidRear&&!full){
@@ -313,6 +316,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
                 const compactCrown=hair?.assets?.[keys[0]]==='back1_99';
                 const surface=createHairShell(simplifyLinerContours(contours),compactCrown?.008:.022,compactCrown?.04:.1);
                 const linerMaterial=keep(new T.MeshStandardMaterial({color:rearShade,side:T.DoubleSide,roughness:1}));
+                linerMaterial.userData.illustrationHair=true;
                 const liner=new T.Mesh(keep(createRearHairLiner(settings,headDepth,surface,compactCrown)),linerMaterial);
                 liner.name='rear-hair-wisp-liner';liner.position.copy(sheet.position);hairPivot.add(liner);
             }

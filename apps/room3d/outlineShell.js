@@ -3,6 +3,7 @@ import * as T from 'three';
 // 背面外壳描边（inverted hull）：每个描边 mesh 罩一层沿法线外扩的墨色背面壳，
 // 每个物件都有完整一圈轮廓线，物件相接处两侧各画各的边。正交相机下外扩量按
 // 屏幕像素换算，远近粗细一致。宽度与墨色是全部壳材质共享的 uniform，由编辑器统一驱动。
+// 笔触：部件级宽度变体——头发线粗、脸线细、其余标准，对应手绘描边的粗细节奏。
 const shellWidth={value:.024};
 const shellInk={value:new T.Color('#3a3542')};
 const materialCache=new Map();
@@ -17,11 +18,19 @@ function hiddenMaterial(){
  return hidden;
 }
 
+function shellScale(source){
+ if(!source)return 1;
+ if(source.userData?.illustrationHair)return 1.45;
+ if(source.userData?.illustrationFace)return .72;
+ return 1;
+}
+
 function shellMaterial(source){
  if(!source||source.transparent)return hiddenMaterial();
  const cutout=source.map||source.alphaMap;
  const alphaTest=cutout?Math.max(source.alphaTest||0,.05):0;
- const key=(source.map?.uuid||'')+'/'+(source.alphaMap?.uuid||'')+'/'+alphaTest+'/'+source.side;
+ const scale=shellScale(source);
+ const key=(source.map?.uuid||'')+'/'+(source.alphaMap?.uuid||'')+'/'+alphaTest+'/'+source.side+'/'+scale.toFixed(2);
  let material=materialCache.get(key);
  if(!material){
   material=new T.MeshBasicMaterial({side:T.BackSide,transparent:false,depthWrite:true,toneMapped:false});
@@ -30,7 +39,9 @@ function shellMaterial(source){
   material.color=shellInk.value;
   material.onBeforeCompile=shader=>{
    shader.uniforms.shellWidth=shellWidth;
-   shader.vertexShader='uniform float shellWidth;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=objectNormal*shellWidth;');
+   // MeshBasicMaterial 的顶点着色器没有光照材质的 objectNormal chunk，
+   // 直接用顶点 normal attribute；注入点在蒙皮 chunk 之前，外扩顶点随骨骼变换。
+   shader.vertexShader='uniform float shellWidth;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=normal*shellWidth*'+scale.toFixed(2)+';');
   };
   material.customProgramCacheKey=()=>'outline-shell/'+key;
   materialCache.set(key,material);
