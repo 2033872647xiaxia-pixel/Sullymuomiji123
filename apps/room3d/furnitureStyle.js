@@ -1,7 +1,7 @@
 // Furniture-only experiment: clean color blocks, without pixelation or extra passes.
 // Keep the existing geometry normals, alpha cutouts, shadows and emissive details.
 // options.flat：卡通档——一刀切二值明暗（复古的三段色阶保持不变）。
-import {characterLightDirection} from './chibi/illustration.js';
+import {characterLightDirection} from './chibi/illustration';
 export function applyRetroFurniture(material,lightUniforms,options) {
  if (!material.isMeshStandardMaterial) return;
  const flat=!!options?.flat;
