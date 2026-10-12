@@ -214,7 +214,7 @@ if(furnitureStyle==='retro'&&furnitureOutlineEnabled&&lightBudget().outline){fur
   if(photoSession&&photoDofEnabled){
    // 部位对焦：绑定脸/身体时逐帧重取世界坐标，相机怎么动焦点都钉在角色身上。
    if(photoFocusPart){const t=photoSession.focusTarget(photoFocusPart.id);if(t)photoFocusDepth=camera.position.distanceTo(photoFocusPart.part==='body'?t.body:t.head);}
-   photoDof.render({focus:photoFocusDepth,aperture:photoDofAperture,range:photoDofRange});}finally{restoreForeground?.();restorePoke?.();restorePresence?.();renderer.info.autoReset=reset;}}
+    photoDof.render({focus:photoFocusDepth,aperture:photoDofAperture,range:photoDofRange});}}finally{restoreForeground?.();restorePoke?.();restorePresence?.();renderer.info.autoReset=reset;}}
  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=false;controls.enablePan=true;controls.screenSpacePanning=true;controls.target.set(0,2,0);
  const effectiveRoomScope=()=>onMenu||viewMode==='flat'?'room':roomScope;
  const displayOffset=(r,anchor)=>overview?[(homeDisplayX(state,r)-homeDisplayX(state,anchor))*ROOM_STEP.x,(r.z-anchor.z)*ROOM_STEP.z]:roomOffset(r,anchor);
