@@ -115,11 +115,29 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         if(!rear)canvas.getContext('2d')!.drawImage(bodyDecor,0,0);
         const map=keep(new T.CanvasTexture(canvas));map.colorSpace=T.SRGBColorSpace;return map;
     };
+    // 眼睛区域遮罩：与眼睛部件同变换绘制其 alpha，供着色器给眼底加微弱自发光。
+    const eyeMaskCanvas=document.createElement('canvas');eyeMaskCanvas.width=eyeMaskCanvas.height=472;
+    const eyeMaskTexture=keep(new T.CanvasTexture(eyeMaskCanvas));
+    const refreshEyeMask=()=>{
+        const mctx=eyeMaskCanvas.getContext('2d')!;
+        mctx.clearRect(0,0,472,472);
+        const splitFace=faceSettings?.enabled&&faceImages?composeFace(faceSettings,faceImages,faceSettings.eyeState):undefined;
+        const drawable=splitFace&&!faceSettings?.useBaseEyes?splitFace.eyes:faceSettings?.useBaseEyes&&parts['eyes']?colorBaseEyes(parts['eyes'],parts['eyes-raw'],faceSettings):parts['eyes'];
+        if(!drawable)return false;
+        mctx.save();
+        mctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
+        mctx.transform(.97,0,0,.96,237*.03,268*.04-8);
+        mctx.drawImage(drawable,0,0,472,472);
+        mctx.restore();
+        eyeMaskTexture.needsUpdate=true;
+        return true;
+    };
     const frontCloth=keep(new T.MeshStandardMaterial({map:appearance==='outfit'?garmentMap(false):makeTexture([],skin),roughness:1}));
     frontCloth.userData.illustrationCast=true;
     const faceKeys=appearance==='outfit'&&!blank?['facemark','eyes','mouth','outfit','faceDecor']:['facemark','eyes','mouth','faceDecor'];
     const front=keep(new T.MeshStandardMaterial({map:makeTexture(faceKeys,skin),roughness:1}));
     front.userData.illustrationFace=true;
+    if(refreshEyeMask())front.userData.eyeMask=eyeMaskTexture;
     // 前发 SDF：卡通画风的脸部阴影贴图，随部件形状逐角色生成；无前发则留空回落屏幕落影。
     const faceSdf=makeFaceSdf(parts.fronthair as HTMLImageElement|HTMLCanvasElement|undefined,blank?16:0);
     if(faceSdf){keep(faceSdf);front.userData.faceSdf=faceSdf;}
@@ -152,6 +170,7 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         makeTexture(faceKeys,skin,'original',awakeMap!);
         makeTexture(faceKeys,skin,'sleep',asleepMap);
         makeTexture(faceKeys,skin,'squeeze',cuteMap);
+        if(refreshEyeMask())front.userData.eyeMask=eyeMaskTexture;
         front.map=awakeMap;front.needsUpdate=true;
     };
     const updateFace=(time:number)=>{

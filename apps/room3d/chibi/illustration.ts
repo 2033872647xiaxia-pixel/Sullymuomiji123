@@ -66,6 +66,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
         const roomTint={value:new T.Color('#ffffff')};roomTints.set(material,roomTint);
         const room={enabled:{value:0},uniforms:{roomShadeTint:{value:new T.Color('#ffffff')},roomSunTint:{value:new T.Color('#ffffff')},roomBrightness:{value:1},roomSunContrast:{value:0},roomBounceUp:{value:new T.Color('#ffffff')},roomBounceDown:{value:new T.Color('#ffffff')}},cel:{value:0}};roomLights.set(material,room);
         const faceSdf = material.userData.faceSdf as T.Texture | undefined;
+        const eyeMask = material.userData.eyeMask as T.Texture | undefined;
         material.toneMapped = false;
         material.onBeforeCompile = (shader,renderer) => {
           saved.compile.call(material,shader,renderer);
@@ -77,9 +78,10 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
           shader.uniforms.dropShadowDrop=dropShadowUniforms.drop;
           shader.uniforms.dropShadowEnabled=dropShadowUniforms.enabled;
           if(faceSdf)shader.uniforms.faceSdfMap={value:faceSdf};
+          if(eyeMask)shader.uniforms.eyeMaskMap={value:eyeMask};
           shader.uniforms.characterLightDirection=characterLightDirection;
           Object.assign(shader.uniforms,room.uniforms);
-          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\n':'')+'uniform vec3 characterLightDirection;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n'+shader.fragmentShader;
+          shader.fragmentShader='uniform vec3 characterRoomTint;\nuniform float characterRoomEnabled;\nuniform float characterCel;\nuniform sampler2D dropShadowMask;\nuniform vec2 dropShadowScreen;\nuniform vec2 dropShadowDrop;\nuniform float dropShadowEnabled;\n'+(faceSdf?'uniform sampler2D faceSdfMap;\n':'')+(eyeMask?'uniform sampler2D eyeMaskMap;\n':'')+'uniform vec3 characterLightDirection;\nuniform vec3 roomShadeTint;\nuniform vec3 roomSunTint;\nuniform float roomBrightness;\nuniform float roomSunContrast;\nuniform vec3 roomBounceUp;\nuniform vec3 roomBounceDown;\n'+shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace(
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `
@@ -160,10 +162,14 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float inkRim = smoothstep(.68,.73,inkGrazing)*inkBack;
             inkRoom = mix(inkRoom,inkSkin*1.18+vec3(.04),inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
+            ${eyeMask ? `
+            // 眼睛微光：眼底一层若有若无的自发光（夜里「眼里有光」）。
+            // 只加亮不参与明暗档，白天几乎无感，暗处隐约可见。
+            outgoingLight += (inkSkin*.14+vec3(.03))*texture2D(eyeMaskMap,vMapUv).a*characterCel;` : ''}
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v8-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v9-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
