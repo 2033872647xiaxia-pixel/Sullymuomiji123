@@ -125,16 +125,16 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             inkRoomShade += inkSun * mix(.12,${material.userData.illustrationFace ? '.30' : '.38'},roomSunContrast);
             ${material.userData.faceSdf ? `
-            // 脸部 SDF 阴影：距离场由前发部件生成（FbxBody / faceSdf.ts），边界跟随
-            // 刘海下缘。阈值随主光横向扫动偏移——光从哪边来，影带向对侧加深；
-            // 刘海覆盖区内（含透视缝隙）场值为负，任何阈值下都是影。
+            // 脸部 SDF 阴影（原神式全范围扫动）：距离场由前发部件生成（faceSdf.ts），
+            // 阈值面沿横向整体倾斜——光从右来，左半脸从发际线整片入影；正前光只剩
+            // 刘海正下窄带。影边界随光呈对角弧线掠过额头，而非小幅平移。
             float faceField = texture2D(faceSdfMap, vMapUv).r * 2.0 - 1.0;
             vec3 faceRight = normalize(cross(vec3(0.,1.,0.), normal));
-            float faceSweep = clamp(dot(characterLightDirection, faceRight), -1., 1.);
-            float faceCut = 0.06 + 0.55 * faceSweep * (0.5 - vMapUv.x);
+            float faceSweep = clamp(dot(normalize(characterLightDirection), faceRight), -1., 1.);
+            float faceCut = -faceSweep * (vMapUv.x * 2.0 - 1.0) * .9;
             float faceAa = max(fwidth(faceField) * 1.5, 0.02);
             float faceShadow = (1.0 - smoothstep(faceCut - faceAa, faceCut + faceAa, faceField)) * characterCel;
-            inkRoomShade = mix(inkRoomShade, .80, faceShadow);` : material.userData.illustrationFace || material.userData.illustrationSkin ? `
+            inkRoomShade = mix(inkRoomShade, .75, faceShadow);` : material.userData.illustrationFace || material.userData.illustrationSkin ? `
             // 屏幕空间落影（前发/衣片 → 脸与皮肤）：按主光方向偏移采样剪影蒙版，
             // 命中处直接压进阴影档，颜色随下方的偏色一起换。无 SDF 的脸部走这条兜底。
             float dropMask = dropShadowEnabled > .5
@@ -163,7 +163,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v7-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v8-' + (material.userData.illustrationFace ? (material.userData.faceSdf ? 'face-sdf' : 'face') : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
