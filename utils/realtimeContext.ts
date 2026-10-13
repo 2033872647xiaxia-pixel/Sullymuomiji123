@@ -923,7 +923,8 @@ export const RealtimeContextManager = {
         charRegion?: CharRegionOverride,
         // includeTime=false：角色关掉了「时间感知」。天气/新闻还要，但当前时间和今日节日
         // 属于时间感知的范畴，这个开关关着就不该从这一段里漏出去。
-        opts?: { includeTime?: boolean },
+        // userLocation：上游新能力——设备位置（隐私已在调用方过滤），仅前台请求携带。
+        opts?: { includeTime?: boolean; userLocation?: Promise<string> },
     ): Promise<string> => {
         const includeTime = opts?.includeTime !== false;
         const parts: string[] = [];
@@ -996,6 +997,15 @@ export const RealtimeContextManager = {
                     parts.push(`（以上天气是你抬头看天、出门体感得来的大概印象——你不是气象台，记不住精确数字，聊天时就按这个感觉说。若你真的需要精确数值（比如对方问具体温度、或你要决定穿什么），可单独输出一行：[[CHECK_WEATHER]]，系统会替你打开天气 App 查到你和对方两地的精确数据。别为了用而用，日常感觉够用就别查。）`);
                 }
             }
+        }
+
+        // 3.5 用户位置（隐私已过滤的设备文本，仅前台请求携带；紧挨天气之后、
+        //     新闻之前，不进永久档案。不重复注入：chatPrompts 侧只在 realtime
+        //     未渲染位置时才补一份。）
+        const userLocationText = (await opts?.userLocation)?.trim();
+        if (userLocationText) {
+            parts.push('');
+            parts.push(userLocationText);
         }
 
         // 4. 新闻热点（背景认知）

@@ -50,6 +50,7 @@ import { migrateWorldDaySegs } from '../utils/worldHome/prompts';
 import { ChatParser } from '../utils/chatParser';
 import { safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
+import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import { buildFetchFailureDetail, classifyFetchFailure, describeReachabilityProbe, parseTargetUrl, probeOriginReachability, shouldProbeReachability, summarizeFetchRequestBody } from '../utils/networkFailureDiagnosis';
@@ -94,6 +95,7 @@ import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setCharNameRegistry } from '../utils/charNameRegistry';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from '../utils/ttsProvider';
+import { DEFAULT_ELEVENLABS_MODEL } from '../utils/elevenLabsModels';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -719,7 +721,7 @@ const defaultApiConfig: APIConfig = {
   ttsProvider: 'minimax',
   fishAudioModel: 's2.1-pro',
   elevenLabsApiKey: '',
-  elevenLabsModel: 'eleven_flash_v2_5',
+  elevenLabsModel: DEFAULT_ELEVENLABS_MODEL,
   elevenLabsStability: 0.5,
   elevenLabsSimilarityBoost: 0.8,
   elevenLabsStyle: 0,
@@ -1467,6 +1469,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   : resource instanceof URL
                       ? resource.href
                       : String(resource);
+          // Location lookup URLs contain device coordinates. Keep them out of API
+          // capture, network diagnostics and request comparison caches; direct only.
+          if (isUserLocationLookupUrl(urlStr)) return originalFetch(...args);
           const fetchStartedAt = Date.now();
           // 失败诊断要按发起时刻去 Resource Timing 里认领本次那条记录，而 entry.startTime 跟
           // performance.now() 同一条时间轴、跟 Date.now() 不是——两者不能混用，详见
@@ -2147,6 +2152,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
         await loadSettings();
 
+        // 旧剧情副本曾把设定日期写成现实收发时间。先校正，再让历史/记忆/云端读取。
+        const storyTimelineRepair = await DB.ensureStoryTheaterTimestamps().catch(error => {
+            console.error('剧情收发时间校正失败，将在读取历史时重试', error);
+            return { repairedCharacterIds: [] as string[] };
+        });
+
         // 老用户库存的鲨盘图链接就地改写成 jsDelivr（幂等、跑一次）。放在读 characters 之前，
         // 让下面 getAllCharacters 拿到的就是改好的数据。见 utils/sharkpanAssetMigration.ts。
         await migrateSharkpanAssets();
@@ -2302,13 +2313,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         try {
           const savedRealtime = localStorage.getItem('os_realtime_config');
           const savedApiRaw = localStorage.getItem('os_api_config');
+          const restoredRealtime = savedRealtime
+            ? { ...defaultRealtimeConfig, ...JSON.parse(savedRealtime) }
+            : defaultRealtimeConfig;
+          for (const char of finalChars) {
+            if (storyTimelineRepair.repairedCharacterIds.includes(char.id)) {
+              markAmsgStateDirty({ char, userProfile: dbUser ?? defaultUserProfile, groups: dbGroups, realtimeConfig: restoredRealtime });
+            }
+          }
           resumePendingAmsgStateSync({
             characters: finalChars,
             userProfile: dbUser ?? defaultUserProfile,
             groups: dbGroups,
-            realtimeConfig: savedRealtime
-              ? { ...defaultRealtimeConfig, ...JSON.parse(savedRealtime) }
-              : defaultRealtimeConfig,
+            realtimeConfig: restoredRealtime,
             // 上次没传成功的 LLM 凭据行按这份重算补传；没有就跳过那一项。
             apiConfig: savedApiRaw ? JSON.parse(savedApiRaw) : undefined,
           });

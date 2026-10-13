@@ -1,6 +1,7 @@
 import {secretNoteContext} from './secretNote';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
 import { expandHomeContextHistory } from './homeContextSegments';
+import { hasReliableMessageTimestamp, protectPendingChatTurn } from './storyTheaterTimeline';
 import { sarPublicContext } from './vrWorld/kanataPublicContext';
 import { kanataTitleContext } from './vrWorld/kanataTitle';
 import { selectCharacterContextMessages } from './chatContextRange';
@@ -16,6 +17,7 @@ import { computeCurrentListening, getCurrentSlot } from './charMusicSchedule';
 import { getCharLyricSnippet } from './charLyricCache';
 import { MusicCfg, loadMusicCfgStandalone } from '../context/MusicContext';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
+import { getBackgroundUserLocationContext, getUserLocationContext } from './userLocation';
 import { isScheduleFeatureOn } from './scheduleFeature';
 import { VOICE_ACTING_GUIDE } from './minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from './fishAudioTts';
@@ -130,6 +132,8 @@ export const detectChatModeTransition = (messages: readonly Message[]): ChatMode
         const mode = getChatModeTransition(message);
         if (mode) return hasPendingChatInput ? mode : null;
 
+        // 刚送达的定时主动消息不是对待回复输入的回答，也不代表线上格式已经切换。
+        if (message.role === 'assistant' && message.metadata?.activeMsg2?.taskId != null) continue;
         if (message.role === 'assistant') return null;
         if (message.role === 'user') hasPendingChatInput = true;
     }
@@ -164,6 +168,8 @@ export interface PromptBuildOptions {
     taskCommandGuide?: boolean;
     /** 注入备忘录管理能力说明（仅单聊用；其他场景只读不教） */
     memoManagement?: boolean;
+    /** Device-only foreground lookup; cloud templates never carry a location snapshot. */
+    includeUserLocation?: boolean;
     /** 主 API 从完整数据库历史识别出的「刚从哪种模式回到 ChatApp」。 */
     returningFromMode?: ChatModeTransition;
     /**
@@ -339,6 +345,9 @@ export const ChatPrompts = {
                 return null;
             })
             : Promise.resolve(null);
+        const userLocationPromise = forFirePack
+            ? Promise.resolve(getBackgroundUserLocationContext(userProfile.name))
+            : promptOptions?.includeUserLocation ? getUserLocationContext(userProfile.name) : Promise.resolve('');
 
         // 记忆宫殿检索结果现在从 char.memoryPalaceInjection 读取。
         // deferVolatile：时间/宫殿召回/情绪 buff 三块不进 stable，由下面的 volatileState 承接。
@@ -400,9 +409,10 @@ export const ChatPrompts = {
                     // 时间行跟着角色的「时间感知」开关走：关掉的角色不该从天气块里读到
                     // 「当前真实时间」，那是这个开关本来要挡住的东西。
                     // char.regionConfig：城市触发双城市天气；订阅白名单 + 占比权重在 buildFullContext 里做过滤 / 加权抽样。
+                    // userLocation：仅前台请求携带（隐私已在 userLocation 模块过滤），云模板不带位置快照。
                     const realtimeContext = await RealtimeContextManager.buildFullContext(
                         config, charTz, char.regionConfig,
-                        { includeTime: char.timeAwarenessEnabled !== false },
+                        { includeTime: char.timeAwarenessEnabled !== false, userLocation: userLocationPromise },
                     );
                     return `\n${realtimeContext}\n`;
                 }
@@ -552,7 +562,7 @@ ${groupLogStr}\n`;
             }
         })();
 
-        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText, assetIntuitionText] =
+        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText, assetIntuitionText, userLocationText] =
             await Promise.all([
                 timed('realtime', realtimePromise),
                 timed('schedule', schedulePromise),
@@ -562,10 +572,14 @@ ${groupLogStr}\n`;
                 timed('notionNotes', notionNotesPromise),
                 timed('lifeRecord', lifeRecordPromise),
                 timed('assetIntuition', assetIntuitionPromise),
+                timed('userLocation', userLocationPromise),
             ]);
 
         // ── 拼接：易变的进 volatileState，稳定的进 baseSystemPrompt ──
         volatileState += realtimeText;
+        // Local weather rendering already embeds it beside weather. Instant chat's
+        // weather arrives from the worker, so keep this per-turn text in Live Context.
+        if (timelyByWorker || (!config.weatherEnabled && !config.newsEnabled) || !realtimeText) volatileState += userLocationText;
 
         // 日程已由 ContextBuilder 实时块统一注入；这里的 schedule 仅供音乐氛围使用。
 
@@ -1160,6 +1174,8 @@ ${voiceActingGuide()}`;
             contextHighWaterMark?: number;
             /** 默认使用聊天时间感知；见面入口传线下开关，控制时间戳与互动间隔。 */
             timeAwarenessEnabled?: boolean;
+            /** 线上请求兜底旧剧情副本的错序，见面自身历史不启用。 */
+            protectPendingChatTurn?: boolean;
         },
     ) => {
         // Filter Logic
@@ -1170,7 +1186,9 @@ ${voiceActingGuide()}`;
         if (processedExcludeIds && processedExcludeIds.size > 0) {
             effectiveHistory = effectiveHistory.filter(m => !processedExcludeIds.has(m.id));
         }
-        const historySlice = expandHomeContextHistory(effectiveHistory.slice(-limit));
+        const orderedHistory = options?.protectPendingChatTurn ? protectPendingChatTurn(effectiveHistory) : effectiveHistory;
+        const expandedHistory = expandHomeContextHistory(orderedHistory.slice(-limit));
+        const historySlice = options?.protectPendingChatTurn ? protectPendingChatTurn(expandedHistory) : expandedHistory;
         const charTz = resolveCharTimeZone(char);
         const timeAwarenessOn = options?.timeAwarenessEnabled ?? (char.timeAwarenessEnabled !== false);
 
@@ -1181,20 +1199,20 @@ ${voiceActingGuide()}`;
             let lastRealMsg: Message | undefined;
             for (let i = historySlice.length - 2; i >= 0; i--) {
                 const m = historySlice[i];
-                if (!m.metadata?.proactiveHint && !(m.role === 'assistant' && i > 0 && historySlice[i - 1]?.metadata?.proactiveHint)) {
+                if (hasReliableMessageTimestamp(m) && !m.metadata?.proactiveHint && !(m.role === 'assistant' && i > 0 && historySlice[i - 1]?.metadata?.proactiveHint)) {
                     lastRealMsg = m;
                     break;
                 }
             }
             // 时间感知关闭时，互动间隔与现实消息时间戳一起遮住。
-            if (lastRealMsg && currentMsg && timeAwarenessOn) timeGapHint = ChatPrompts.getTimeGapHint(lastRealMsg, currentMsg.timestamp, charTz);
+            if (lastRealMsg && currentMsg && timeAwarenessOn && hasReliableMessageTimestamp(currentMsg)) timeGapHint = ChatPrompts.getTimeGapHint(lastRealMsg, currentMsg.timestamp, charTz);
         }
 
         return {
             apiMessages: historySlice.map((m, index) => {
                 if (m.type === 'secret_note') return {role: m.role, content: secretNoteContext(m.content)};
                 let content: any = m.content;
-                const timeStr = timeAwarenessOn ? `[${ChatPrompts.formatDate(m.timestamp, charTz)}]` : '';
+                const timeStr = timeAwarenessOn && hasReliableMessageTimestamp(m) ? `[${ChatPrompts.formatDate(m.timestamp, charTz)}]` : '';
                 const sourceTag = (() => {
                     const source = m.metadata?.source;
                     if (source === 'call') return '[通话]';

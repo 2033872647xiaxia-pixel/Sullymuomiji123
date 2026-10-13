@@ -342,10 +342,10 @@ export interface APIConfig {
   fishAudioModel?: string;
   // ElevenLabs BYOK 配置。Voice ID 存在角色 voiceProfile.elevenLabsVoiceId，避免角色串音色。
   elevenLabsApiKey?: string;
-  // 缺省使用低延迟 eleven_flash_v2_5；也支持 eleven_v3 / eleven_multilingual_v2。
+  // 缺省使用 eleven_v4；也支持 v4 Turbo、Flash v2.5、v3 和 Multilingual v2。
   // 角色 voiceProfile.elevenModel（fork 扩展）优先于这个全局默认。
   elevenLabsModel?: string;
-  // ElevenLabs Voice Settings（请求级覆盖，不修改 ElevenLabs 控制台里的音色默认值）。
+  // 请求级覆盖；v4 / v4 Turbo 只发送稳定度与相似度，保留其他模型的旧参数。
   elevenLabsStability?: number;
   elevenLabsSimilarityBoost?: number;
   elevenLabsStyle?: number;
@@ -1138,7 +1138,7 @@ export interface SimScript {
     buff?: { name?: string; label: string; emoji?: string; color?: string; intensity?: 1 | 2 | 3; description?: string };
 }
 
-// 「人格模拟」演出结束后写入「生活记录」的一条留存（角色不记得，仅作为用户的体验档案）
+// 「人格模拟」生成后写入「生活记录」的剧本与播放进度（角色不记得，仅作为用户的体验档案）
 export interface PhoneSimLog {
     id: string;
     mode: 'daily' | 'event';
@@ -1151,6 +1151,8 @@ export interface PhoneSimLog {
     memoryText?: string;  // 演出可读梗概，作为回忆发给角色时用（让角色真的"知道"发生了什么）
     timestamp: number;
     script?: SimScript;   // 完整脚本快照——存在则「生活记录」可原样重播（旧记录没有，仅可发送）
+    playback?: { beatIndex: number; status: 'ready' | 'playing' | 'completed' };
+    completedAt?: number; // 首次播到结尾的时间；重播不再应用情绪效果。无 playback 的旧记录视为已完成。
 }
 
 // ============================================================
@@ -2336,6 +2338,14 @@ export interface StoryTheaterArchive {
     /** summary 策略的事件盒正文；vector 策略留空，由独立 charId 分区召回。 */
     summary?: string;
     createdAt: number;
+    /** 用户主动转为角色记忆的回执；与聊天高水位无关，随整机备份保留。 */
+    memoryConversions?: Record<string, {
+        date: string;
+        convertedAt: number;
+        destination: 'palace' | 'neural';
+        memoryIds: string[];
+        skipped: number;
+    }>;
 }
 
 /** 剧场里用户所扮演的身份；已有角色按 characterId 动态读取，自定义身份来自面具箱。 */

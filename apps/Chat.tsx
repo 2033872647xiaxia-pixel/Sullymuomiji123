@@ -1,3 +1,4 @@
+import {avatarFrameLayer} from '../utils/avatarFrameTarget';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import {homePhoneAppearance,HOME_PHONE_BUBBLES} from './room3d/homePhoneAppearance';
 
@@ -88,6 +89,9 @@ import {
     synthesizeSpeechDetailed,
 } from '../utils/ttsRouter';
 import { playVoiceAudio, primeVoiceAudio, stopVoiceAudio, voicePlaybackErrorMessage, shouldAutoGenerateVoice, shouldAutoPlayGeneratedVoice } from '../utils/voicePlayback';
+import { useStreamingVoice } from '../hooks/useStreamingVoice';
+import StreamingVoiceBar from '../components/voice/StreamingVoiceBar';
+import { streamElevenLabsSpeech, type StreamedVoice } from '../utils/elevenLabsStream';
 import { voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from '../utils/voiceLanguage';
 import { fetchBlobForShare, shareOrDownloadBlob } from '../utils/shareExport';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -569,10 +573,11 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     });
 
     // --- Voice TTS for chat messages ---
-    interface VoiceData { url: string; originalText: string; spokenText?: string; lang?: string; favorite?: boolean; }
+    interface VoiceData { url: string; originalText: string; spokenText?: string; lang?: string; favorite?: boolean; recording?: StreamedVoice; }
     // Persisted shape (IndexedDB assets store). `blob` is the raw audio;
     // `remoteUrl` is the fallback when fetching the MiniMax CDN blob was blocked by CORS.
     interface StoredVoice {
+        recording?: StreamedVoice;
         blob?: Blob;
         remoteUrl?: string;
         favorite?: boolean;
@@ -589,6 +594,15 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [voiceLoading, setVoiceLoading] = useState<Set<number>>(new Set());
     const [playingMsgId, setPlayingMsgId] = useState<number | null>(null);
     const chatAudioRef = useRef<HTMLAudioElement | null>(null);
+    const streamingVoice = useStreamingVoice(activeCharacterId);
+    const autoVoiceQueue = useRef<Promise<unknown>>(Promise.resolve());
+    const queuedVoices = useRef(new Set<number>());
+    const voiceQueueEpoch = useRef(0);
+    const voiceStreamAborts = useRef(new Map<number, AbortController>());
+    const stopStreamingVoice = () => {
+        voiceQueueEpoch.current += 1; streamingVoice.stop(); setPlayingMsgId(null);
+        voiceStreamAborts.current.forEach(abort => abort.abort()); voiceStreamAborts.current.clear();
+    };
     const voiceRequestsRef = useRef(new Set<number>());
     const voiceMountedRef = useRef(true);
     const prevIsTypingRef = useRef(false);
@@ -610,11 +624,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     /** Whether this character can synthesize real voice under the active TTS provider (key + a voice profile). */
     const isTtsReady = useCallback(() => canSynthesizeSpeech(char, apiConfig), [char, apiConfig]);
 
-    const persistVoice = async (msgId: number, url: string, blob: Blob | null, originalText: string, spokenText: string | undefined, lang: string | undefined) => {
+    const persistVoice = async (msgId: number, url: string, blob: Blob | null, originalText: string, spokenText: string | undefined, lang: string | undefined, recording?: StreamedVoice) => {
         try {
             const stored: StoredVoice = blob
                 ? { blob, originalText, spokenText, lang, favorite: false }
                 : { remoteUrl: url, originalText, spokenText, lang, favorite: false };
+            if (recording) stored.recording = recording;
             await DB.saveAssetRaw(voiceAssetKey(msgId), stored);
         } catch (e) {
             console.warn('[Chat] persist voice failed', e);
@@ -652,6 +667,17 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         return chatAudioRef.current;
     };
     const playChatVoice = (msgId: number, url: string) => {
+        stopStreamingVoice();
+        const recording = voiceDataMap[msgId]?.recording;
+        if (recording) {
+            stopVoiceAudio(prepareChatAudio());
+            const epoch = voiceQueueEpoch.current;
+            setPlayingMsgId(msgId);
+            void streamingVoice.replay(String(msgId), recording).catch(error => {
+                if (error.name !== 'AbortError') addToast(error.message, 'error');
+            }).finally(() => { if (epoch === voiceQueueEpoch.current) setPlayingMsgId(null); });
+            return;
+        }
         void playVoiceAudio(prepareChatAudio(), url, {
             onPlaying: () => setPlayingMsgId(msgId),
             onStopped: () => setPlayingMsgId(null),
@@ -660,6 +686,9 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     };
 
     const handlePlayVoice = (msgId: number) => {
+        if (streamingVoice.state?.id === String(msgId) && ['loading', 'playing'].includes(streamingVoice.state.status)) {
+            stopStreamingVoice(); return;
+        }
         const data = voiceDataMap[msgId];
         if (!data) {
             // No voice data yet — trigger TTS generation (e.g. placeholder voice bar clicked)
@@ -706,6 +735,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     };
 
     const handleManualTts = async (msg: Message, autoTriggered = false): Promise<GeneratedVoiceData | null> => {
+        if (!autoTriggered && apiConfig.ttsProvider === 'elevenlabs') streamingVoice.prime();
         if (voiceRequestsRef.current.has(msg.id)) return null;
         if (voiceDataMap[msg.id]) {
             if (autoTriggered) return null;
@@ -750,7 +780,13 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             return null;
         }
 
-        if (!autoTriggered) primeVoiceAudio(prepareChatAudio());
+        if (!autoTriggered) {
+            primeVoiceAudio(prepareChatAudio());
+            if (ttsProvider === 'elevenlabs') stopStreamingVoice();
+        }
+        const epoch = voiceQueueEpoch.current;
+        const abort = new AbortController();
+        if (ttsProvider === 'elevenlabs') voiceStreamAborts.current.set(msg.id, abort);
         voiceRequestsRef.current.add(msg.id);
         setVoiceLoading(prev => new Set(prev).add(msg.id));
         try {
@@ -806,7 +842,18 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
             if (!spokenText || spokenText.length < 2) return null;
 
-            const { url: blobUrl, blob } = await synthesizeSpeechDetailed(spokenText, char, apiConfig, {
+            if (ttsProvider === 'elevenlabs' && (abort.signal.aborted || epoch !== voiceQueueEpoch.current || activeCharIdRef.current !== msg.charId)) return null;
+            const streamPlayback = ttsProvider === 'elevenlabs' && shouldAutoPlayGeneratedVoice({ autoTriggered, autoPlayEnabled: char.chatVoiceAutoPlay });
+            let recording: StreamedVoice | undefined;
+            if (streamPlayback) {
+                stopVoiceAudio(prepareChatAudio());
+                setPlayingMsgId(msg.id);
+                recording = await streamingVoice.speak(String(msg.id), spokenText, char, apiConfig, { languageBoost: voiceLang || undefined, emotion: voiceEmotion });
+                if (epoch === voiceQueueEpoch.current) setPlayingMsgId(null);
+            } else if (ttsProvider === 'elevenlabs') {
+                recording = await streamElevenLabsSpeech(spokenText, char, apiConfig, { signal: abort.signal, languageBoost: voiceLang || undefined, emotion: voiceEmotion });
+            }
+            const { url: blobUrl, blob } = recording ? { url: URL.createObjectURL(recording.blob), blob: recording.blob } : await synthesizeSpeechDetailed(spokenText, char, apiConfig, {
                 languageBoost: voiceLang || undefined,
                 groupId: apiConfig.minimaxGroupId || undefined,
                 emotion: voiceEmotion,
@@ -816,25 +863,27 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             const storedSpokenText = voiceTagContent ? displaySpoken : (voiceLang ? displaySpoken : undefined);
             const storedLang = voiceLang || undefined;
             // Persist so the voice bar survives leaving and re-entering the chat.
-            persistVoice(msg.id, blobUrl, blob, originalText, storedSpokenText, storedLang);
+            persistVoice(msg.id, blobUrl, blob, originalText, storedSpokenText, storedLang, recording);
             if (!voiceMountedRef.current || activeCharIdRef.current !== msg.charId) {
                 if (blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
                 return null;
             }
             if (blobUrl.startsWith('blob:')) voiceBlobUrlsRef.current.add(blobUrl);
-            setVoiceDataMap(prev => ({ ...prev, [msg.id]: { url: blobUrl, originalText, spokenText: storedSpokenText, lang: storedLang } }));
+            setVoiceDataMap(prev => ({ ...prev, [msg.id]: { url: blobUrl, originalText, spokenText: storedSpokenText, lang: storedLang, recording } }));
             // 合成完是否立刻播（规则和来由见 shouldAutoPlayGeneratedVoice）：
             // AI 自动发来的默认不响、等用户点；用户自己点着要的一定响。
-            if (shouldAutoPlayGeneratedVoice({ autoTriggered, autoPlayEnabled: char.chatVoiceAutoPlay })) {
+            if (!streamPlayback && shouldAutoPlayGeneratedVoice({ autoTriggered, autoPlayEnabled: char.chatVoiceAutoPlay })) {
                 playChatVoice(msg.id, blobUrl);
             }
             return { url: blobUrl, originalText, spokenText: storedSpokenText, lang: storedLang, blob };
         } catch (err: any) {
             // 记一笔失败：自动那条路下次扫到就跳过（见 voiceFailedRef 的说明）。
+            if (err?.name === 'AbortError') return null;
             voiceFailedRef.current.add(msg.id);
             addToast(`语音生成失败: ${err?.message || '未知错误'}`, 'error');
             return null;
         } finally {
+            if (voiceStreamAborts.current.get(msg.id) === abort) voiceStreamAborts.current.delete(msg.id);
             voiceRequestsRef.current.delete(msg.id);
             setVoiceLoading(prev => { const next = new Set(prev); next.delete(msg.id); return next; });
         }
@@ -849,7 +898,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             if (!blob && stored?.remoteUrl) {
                 try { blob = await fetchBlobForShare(stored.remoteUrl, 'audio/mpeg'); } catch { /* 下面给出明确提示 */ }
             }
-            const fname = `${(char?.name || '语音').replace(/[\\/:*?"<>|]/g, '_')}_语音_${msg.id}.mp3`;
+            const fname = `${(char?.name || '语音').replace(/[\\/:*?"<>|]/g, '_')}_语音_${msg.id}.${blob?.type === 'audio/wav' ? 'wav' : 'mp3'}`;
             if (!blob) {
                 addToast('这条还没有可下载的语音', 'error');
                 return;
@@ -953,6 +1002,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         if (!shouldAutoGenerateVoice({ autoPlayEnabled: char.chatVoiceAutoPlay })) return;
         if (!characterHasVoice(char, apiConfig)) return;
         // Scan recent assistant messages for unprocessed <语音> tags
+        const pendingVoices: Message[] = [];
         for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i];
             // Stop scanning once we hit a non-assistant message (end of current AI response batch)
@@ -962,7 +1012,16 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             // 合成失败过就别再自动重试了：扫描窗里每来一条消息都重扫一遍，
             // 同一条会一路重试到窗口关闭，还每次弹一个失败提示。用户手点不受影响。
             if (voiceFailedRef.current.has(msg.id)) continue;
-            handleManualTts(msg, true);
+            pendingVoices.unshift(msg);
+        }
+        for (const msg of pendingVoices) {
+            if (apiConfig.ttsProvider !== 'elevenlabs') { void handleManualTts(msg, true); continue; }
+            if (queuedVoices.current.has(msg.id)) continue;
+            queuedVoices.current.add(msg.id);
+            const epoch = voiceQueueEpoch.current;
+            autoVoiceQueue.current = autoVoiceQueue.current.then(async () => {
+                if (epoch === voiceQueueEpoch.current && voiceMountedRef.current && activeCharIdRef.current === msg.charId) await handleManualTts(msg, true);
+            }).catch(() => {}).finally(() => queuedVoices.current.delete(msg.id));
         }
     }, [isTyping, instantChatPending, messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1047,7 +1106,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                             DB.saveAssetRaw(voiceAssetKey(m.id), { ...stored, favorite: undefined }).catch(() => undefined);
                         } catch { /* keep the legacy marker and retry next entry */ }
                     }
-                    updates[m.id] = { url, originalText, spokenText: stored.spokenText, lang: stored.lang, favorite: favorited };
+                    updates[m.id] = { url, originalText, spokenText: stored.spokenText, lang: stored.lang, favorite: favorited, recording: stored.recording };
                 } catch { /* ignore single-message hydration errors */ }
             }
             if (cancelled || !Object.keys(updates).length) return;
@@ -1095,6 +1154,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         const urls = voiceBlobUrlsRef.current;
         return () => {
             voiceMountedRef.current = false;
+            voiceQueueEpoch.current += 1;
+            voiceStreamAborts.current.forEach(abort => abort.abort()); voiceStreamAborts.current.clear();
             if (chatAudioRef.current) stopVoiceAudio(chatAudioRef.current);
             urls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
             urls.clear();
@@ -1499,7 +1560,10 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         noteMessageSent();
         // 借用户"发送"这个手势解锁音频上下文，好让稍后 AI 回复时的白框提示音能顺利播放（移动端自动播放策略）。
         unlockWhiteboxAudio();
-        if (char.chatVoiceEnabled && char.chatVoiceAutoPlay && isTtsReady()) primeVoiceAudio(prepareChatAudio());
+        if (char.chatVoiceEnabled && char.chatVoiceAutoPlay && isTtsReady()) {
+            primeVoiceAudio(prepareChatAudio());
+            if (apiConfig.ttsProvider === 'elevenlabs') streamingVoice.prime();
+        }
         const text = customContent || input.trim();
         const type = customType || 'text';
 
@@ -3831,6 +3895,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // CSS 全默认时为空串不注入；chatModuleAlign 不走 CSS，作为布局属性传给 MessageItem。
     const mergedFineTune = useMemo(() => mergeChatFineTune(osTheme, homePhone?undefined:char?.chatFineTune), [osTheme, char?.chatFineTune,!!homePhone]);
     const chatFineTuneCss = useMemo(() => buildChatFineTuneCss(mergedFineTune), [mergedFineTune]);
+    const selectedAvatarFrameCss=useMemo(()=>avatarFrameLayer([osTheme.chatChromeCustomCss,char?.chromeCustomCss].filter(Boolean).join('\n')),[osTheme.chatChromeCustomCss,char?.chromeCustomCss]);
     const chatAvatarSizeClass = osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const chatAvatarRadiusClass = osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const chatPendingAvatarClass = `${chatAvatarSizeClass} ${chatAvatarRadiusClass} object-cover`;
@@ -3869,6 +3934,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
              )}
 
              {activeTheme.customCss && <style>{activeTheme.customCss}</style>}
+             {!homePhone && selectedAvatarFrameCss && <BlobRefStyle css={selectedAvatarFrameCss} />}
              {/* 气泡工坊的尾巴频率依赖直接挂在气泡上的稳定类。用户 CSS 即使给
                  ::before/::after 写了 !important，中间气泡仍会按“仅组末/隐藏”设置收起尾巴。 */}
              <style>{`
@@ -4353,6 +4419,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 );
             })()}
 
+            <StreamingVoiceBar state={streamingVoice.state} onStop={stopStreamingVoice} />
             {/* onScroll 两件事都要做：handleScrollSnapshot 防抖保存阅读位置（单聊滚动恢复），
                 handleChatScroll 在历史窗口模式下按边界扩展更早/更新的消息。 */}
             <div ref={scrollRef} onScroll={() => { handleScrollSnapshot(); handleChatScroll(); }} onClick={() => { if (inputPreferences.autoReply) setShowPanel('none'); }} className="flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>

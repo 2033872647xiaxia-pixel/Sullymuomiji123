@@ -17,6 +17,10 @@ import { bucketRetryCount, isAnalyticsConfigured, isAnalyticsEnabled, setAnalyti
 import Modal from '../components/os/Modal';
 import ApiConnectionPicker from '../components/os/ApiConnectionPicker';
 import UserHolidaySettings from '../components/settings/UserHolidaySettings';
+import UserLocationSettings, { USER_LOCATION_PAGE_TITLES, getUserLocationParentPage, type UserLocationSettingsPage } from '../components/settings/UserLocationSettings';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
+import { loadUserLocationConfig, type UserLocationConfig } from '../utils/userLocationPrivacy';
+import { saveUserLocationConfig } from '../utils/userLocation';
 import { consumeHolidaySettings, hasHolidaySettingsRequest, type UserHolidayConfig } from '../utils/userHolidays';
 import { NotionManager, FeishuManager, RealtimeContextManager, fetchOwmWeather, fetchOpenMeteoWeather } from '../utils/realtimeContext';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
@@ -31,8 +35,9 @@ import {
     DEFAULT_ELEVENLABS_MODEL,
     ELEVENLABS_MODEL_OPTIONS,
     getElevenLabsVoiceActingGuide,
+    isElevenLabsV4Model,
 } from '../utils/elevenLabsTts';
-import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
+import { getDateVoiceGuide } from '../utils/datePrompts';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, type McpServerConfig } from '../utils/mcpClient';
 import { loadPushConfig, savePushConfig, registerScheduleOnWorker, startHeartbeat, stopHeartbeat, isPushConfigAvailable, ensureSubscribed, sendTestPush, getPushDiagnostics, resetSubscription, deepResetSubscription, type PushDiagnostics } from '../utils/proactivePushConfig';
@@ -726,6 +731,19 @@ const Settings: React.FC = () => {
 
   // 实时感知配置的本地状态
   const [rtWeatherEnabled, setRtWeatherEnabled] = useState(realtimeConfig.weatherEnabled);
+  const [rtUserLocation, setRtUserLocation] = useState<UserLocationConfig>(() => { try { return loadUserLocationConfig(); } catch { return { enabled: false, regions: [] }; } });
+  const [rtUserLocationPage, setRtUserLocationPage] = useState<UserLocationSettingsPage>('main');
+  const [rtUserLocationBusy, setRtUserLocationBusy] = useState(false);
+  useSettingsFocus('location', () => {
+      setRtUserLocationPage('location');
+      setShowRealtimeModal(true);
+  });
+  const closeRealtimePage = () => {
+      if (rtUserLocationBusy) return;
+      if (rtUserLocationPage !== 'main') setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage));
+      else setShowRealtimeModal(false);
+  };
+  useLocalBackHandler(() => { closeRealtimePage(); return true; }, 30, showRealtimeModal);
   const [rtUserHolidays, setRtUserHolidays] = useState<UserHolidayConfig>(() => ({ ...(realtimeConfig.userHolidays || { enabled: false, countryCode: '' }), ...(holidaySettingsFocus ? { enabled: true } : {}) }));
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
   const [rtWeatherCity, setRtWeatherCity] = useState(realtimeConfig.weatherCity);
@@ -2097,8 +2115,13 @@ const Settings: React.FC = () => {
   };
 
   // 保存实时感知配置
+  const handleSaveUserLocation = () => {
+      try { saveUserLocationConfig(rtUserLocation); return true; }
+      catch (error: any) { addToast(error?.message || '定位配置未保存', 'error'); return false; }
+  };
   const handleSaveRealtimeConfig = () => {
       if (rtUserHolidays.enabled && !rtUserHolidays.countryCode) { addToast('请选择生活所在的国家／地区，或关闭节假日感知', 'error'); return; }
+      if (!handleSaveUserLocation()) return;
       const updates = {
           weatherEnabled: rtWeatherEnabled,
           userHolidays: { ...rtUserHolidays, introChoice: rtUserHolidays.enabled ? 'configured' as const : 'declined' as const },
@@ -3812,8 +3835,13 @@ const Settings: React.FC = () => {
                         ))}
                     </select>
                     <p className="text-[11px] text-slate-400 mt-1 pl-1">
-                        Flash v2.5 默认更适合实时聊天；v4 / v3 支持方括号 Audio Tags，v4 还能写自由描述的标签（如 [quietly curious]）。v4 只用稳定度和相似度，风格强度、Speaker Boost 和角色语速对它不生效。切换后对应的内置语音提示规则也会同步切换。
+                        默认推荐 v4，音质与表现力优先；v4 Turbo 生成更快。两者都支持情绪、音效、节奏等 Audio Tags，内置语音指南随模型切换；已有自定义指南会保留。
                     </p>
+                    {isElevenLabsV4Model(localElevenLabsModel) && (
+                        <p className="text-[11px] text-slate-500 mt-2 pl-1">
+                            v4 只支持稳定度与相似度；角色语速、风格强度、Speaker Boost 和 SSML 不生效，请用 Audio Tags 控制节奏与表演。当前播放需等待整段音频生成完成；跨语言时会采用目标语言的自然发音。
+                        </p>
+                    )}
 
                     <details className="mt-3 rounded-xl border border-slate-200/60 bg-white/35 px-3 py-2">
                         <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 select-none">声音参数（高级）</summary>
@@ -3822,7 +3850,7 @@ const Settings: React.FC = () => {
                                 ['稳定度', localElevenLabsStability, setLocalElevenLabsStability],
                                 ['相似度', localElevenLabsSimilarityBoost, setLocalElevenLabsSimilarityBoost],
                                 ['风格强度', localElevenLabsStyle, setLocalElevenLabsStyle],
-                            ] as const).map(([label, value, setter]) => (
+                            ] as const).filter(([label]) => !isElevenLabsV4Model(localElevenLabsModel) || label !== '风格强度').map(([label, value, setter]) => (
                                 <label key={label} className="text-[11px] text-slate-500">
                                     <span className="flex justify-between mb-1"><span>{label}</span><span className="font-mono">{value.toFixed(2)}</span></span>
                                     <input
@@ -3836,7 +3864,7 @@ const Settings: React.FC = () => {
                                     />
                                 </label>
                             ))}
-                            <label className="flex items-center justify-between gap-3 text-[11px] text-slate-500 sm:col-span-2">
+                            {!isElevenLabsV4Model(localElevenLabsModel) && <label className="flex items-center justify-between gap-3 text-[11px] text-slate-500 sm:col-span-2">
                                 <span>Speaker Boost（更贴近原音色，可能增加少量延迟）</span>
                                 <input
                                     type="checkbox"
@@ -3844,7 +3872,7 @@ const Settings: React.FC = () => {
                                     onChange={(e) => setLocalElevenLabsUseSpeakerBoost(e.target.checked)}
                                     className="w-4 h-4 accent-primary"
                                 />
-                            </label>
+                            </label>}
                         </div>
                     </details>
                 </div>
@@ -3905,7 +3933,7 @@ const Settings: React.FC = () => {
                                 ['minimax', 'MiniMax 语音指南', localVoicePromptMinimax, setLocalVoicePromptMinimax, VOICE_ACTING_GUIDE, '聊天 + 电话 · MiniMax 引擎时生效'] as const,
                                 ['fishaudio', '鱼声 Fish 语音指南', localVoicePromptFish, setLocalVoicePromptFish, FISH_VOICE_ACTING_GUIDE, '聊天 + 电话 · 鱼声引擎时生效'] as const,
                                 ['elevenlabs', 'ElevenLabs 语音指南', localVoicePromptElevenLabs, setLocalVoicePromptElevenLabs, getElevenLabsVoiceActingGuide(localElevenLabsModel), '聊天 + 电话 · ElevenLabs 引擎时生效；默认模板随模型变化'] as const,
-                                ['dateVoice', '见面（约会）语音情绪', localVoicePromptDate, setLocalVoicePromptDate, DATE_VOICE_GUIDE, '见面专用 [v:xxx] 规则 · 角色开了见面语音时生效，与引擎无关'] as const,
+                                ['dateVoice', '见面（约会）语音情绪', localVoicePromptDate, setLocalVoicePromptDate, getDateVoiceGuide(localTtsProvider, localElevenLabsModel), '见面专用 [v:xxx] 规则 · v4 默认支持台词内 Audio Tags'] as const,
                             ]).map(([key, title, value, setValue, def, hint]) => {
                                 const active = localTtsProvider === key;
                                 const usingDefault = !value.trim();
@@ -5266,12 +5294,16 @@ const Settings: React.FC = () => {
       {/* 实时感知配置 Modal */}
       <Modal
           isOpen={showRealtimeModal}
-          title="实时感知配置"
-          onClose={() => setShowRealtimeModal(false)}
-          footer={<button onClick={handleSaveRealtimeConfig} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg">保存配置</button>}
+          title={USER_LOCATION_PAGE_TITLES[rtUserLocationPage]}
+          onClose={closeRealtimePage}
+          footer={rtUserLocationPage === 'main'
+              ? <button disabled={rtUserLocationBusy} onClick={handleSaveRealtimeConfig} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg disabled:opacity-40">保存配置</button>
+              : <button disabled={rtUserLocationBusy} onClick={() => { if (rtUserLocationPage === 'about' || handleSaveUserLocation()) setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage)); }} className="w-full py-3 bg-sky-700 text-white font-bold rounded-2xl disabled:opacity-40">{rtUserLocationPage === 'about' ? '返回真实定位' : '保存并返回'}</button>}
       >
           <div className="space-y-5 max-h-[60vh] overflow-y-auto no-scrollbar">
-              <UserHolidaySettings value={rtUserHolidays} onChange={setRtUserHolidays} />
+              {rtUserLocationPage === 'main' && <UserHolidaySettings value={rtUserHolidays} onChange={setRtUserHolidays} />}
+              <UserLocationSettings value={rtUserLocation} onChange={setRtUserLocation} onSave={handleSaveUserLocation} page={rtUserLocationPage} onNavigate={setRtUserLocationPage} onBusyChange={setRtUserLocationBusy} userName={userProfile.name} />
+              {rtUserLocationPage === 'main' && <>
               {/* 天气配置 */}
               <div className="bg-emerald-50/50 p-4 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
@@ -5899,7 +5931,7 @@ const Settings: React.FC = () => {
                       </div>
                   )}
               </div>
-
+              </>}
           </div>
       </Modal>
 

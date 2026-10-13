@@ -9,7 +9,7 @@ import { handleLocalBack } from './localBackHandlers';
 const mocks=vi.hoisted(()=>({update:vi.fn(),open:vi.fn(),active:vi.fn(),done:vi.fn(),read:vi.fn<(...args:any[])=>Promise<any>>(async()=>null),share:vi.fn(),wardrobe:vi.fn(),theme:vi.fn()}));
 vi.mock('../context/OSContext',()=>({useOS:()=>({characters:[{id:'a',name:'甲'},{id:'b',name:'乙'}],activeCharacterId:'b',theme:{},updateTheme:mocks.theme,updateCharacter:mocks.update,addCustomTheme:vi.fn(),setActiveCharacterId:mocks.active,openApp:mocks.open,closeApp:vi.fn(),applyAppearancePreset:vi.fn()})}));
 vi.mock('./db',()=>({DB:{getAsset:mocks.read,getAssetRaw:mocks.read,saveAsset:vi.fn()}}));
-vi.mock('./chatDecoration',()=>({validateDecoration:(v:unknown)=>v,decorationPatches:vi.fn(async()=>({character:{thinkingChainStyle:'echo'}}))}));
+vi.mock('./chatDecoration',async importOriginal=>{const actual=await importOriginal<typeof import('./chatDecoration')>();return{...actual,validateDecoration:(v:unknown)=>v,decorationPatches:vi.fn(async()=>({character:{thinkingChainStyle:'echo'}}))}});
 vi.mock('./beautyUsage',()=>({startBeautyUsage:vi.fn(),decorationSourceKey:async()=>'test',rememberBeautySource:vi.fn()}));
 vi.mock('../components/share/BeautyRepoInvitation',()=>({BeautyRepoLibrary:()=>null}));
 vi.mock('../components/share/BeautySharePanel',()=>({default:(props:any)=>{mocks.share(props);return null;}}));

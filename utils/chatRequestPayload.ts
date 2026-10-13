@@ -1,5 +1,6 @@
 import { getMemoryPalaceHighWaterMarkForContext, selectCharacterContextMessages } from './chatContextRange';
 import { expandHomeContextHistory } from './homeContextSegments';
+import { protectPendingChatTurn } from './storyTheaterTimeline';
 /**
  * 聊天请求载荷统一构造器
  *
@@ -296,8 +297,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // Range/vision processing must retain database IDs. Only after those steps may
     // legacy home rows expand into their actual speakers and chronological events.
     // Recall and live context must see the same timeline as buildMessageHistory.
-    recentMsgsHint = expandHomeContextHistory(recentMsgsHint);
-    const chronologicalHistory = expandHomeContextHistory(historyMsgsForPrompt);
+    recentMsgsHint = protectPendingChatTurn(expandHomeContextHistory(recentMsgsHint));
+    const chronologicalHistory = protectPendingChatTurn(expandHomeContextHistory(historyMsgsForPrompt));
 
     if (isPromptBuildSkipped()) {
         const { apiMessages } = ChatPrompts.buildMessageHistory(
@@ -307,7 +308,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             userProfile,
             emojis,
             undefined,
-            { useVisionDescriptions, contextHighWaterMark },
+            { useVisionDescriptions, contextHighWaterMark, protectPendingChatTurn: true },
         );
         const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
         console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
@@ -373,7 +374,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         userProfile,
         emojis,
         undefined,
-        { useVisionDescriptions, contextHighWaterMark },
+        { useVisionDescriptions, contextHighWaterMark, protectPendingChatTurn: true },
     );
 
     // ── 8. 剥离历史里旧的双语标签（stripImages 时先压平 image_url → 纯文本占位） ──
@@ -391,6 +392,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             memoManagement: !!char.memoEnabled,
             history: cleanedApiMessages,
             timelyByWorker: input.timelyByWorker === true,
+            includeUserLocation: isChatConversationEntry(input.recallEntryPoint),
             returningFromMode: returningFromMode || undefined,
             appRules: input.appPrompt?.rules,
         },

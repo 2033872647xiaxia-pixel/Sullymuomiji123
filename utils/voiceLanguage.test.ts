@@ -33,8 +33,12 @@ describe('Cantonese voice language', () => {
     expect(() => assertTtsLanguageSupported(character(), config({ ttsProvider: 'elevenlabs', elevenLabsModel: 'eleven_v4' }), 'yue')).not.toThrow();
   });
 
+  it.each(['eleven_v4', 'eleven_v4_turbo'])('allows Cantonese with %s', (model) => {
+    expect(() => assertTtsLanguageSupported(character(), config({ ttsProvider: 'elevenlabs', elevenLabsModel: model }), 'yue')).not.toThrow();
+  });
+
   it('rejects models whose official language list does not include Cantonese', () => {
     expect(() => assertTtsLanguageSupported(character('s1'), config({ ttsProvider: 'fishaudio' }), 'yue')).toThrow('S2');
-    expect(() => assertTtsLanguageSupported(character(), config({ ttsProvider: 'elevenlabs', elevenLabsModel: 'eleven_flash_v2_5' }), 'yue')).toThrow('Eleven v4 或 v3');
+    expect(() => assertTtsLanguageSupported(character(), config({ ttsProvider: 'elevenlabs', elevenLabsModel: 'eleven_flash_v2_5' }), 'yue')).toThrow('Eleven v3 / v4 / v4 Turbo');
   });
 });

@@ -8,6 +8,7 @@ import {exportBeautyAuthorBackup,importBeautyAuthorBackup} from './beautyAuthorB
 import { toMountedWorldbook } from './worldbook';
 import { persistCharacterWithHomeMessages } from './homeMessageBridge';
 import {deleteSecretNotesForIds, announceSecretNotesChanged} from './secretNote';
+import { ensureStoryTimelineRepair, invalidateStoryTimelineRepair } from './storyTheaterTimeline';
 
 import { orderWorldEpisodes } from './worldHome/episodeOrder';
 
@@ -663,6 +664,8 @@ export const DB = {
     });
   },
 
+  ensureStoryTheaterTimestamps: async () => ensureStoryTimelineRepair(await openDB()),
+
   ensureHomeContextMessages: async (charId: string): Promise<void> => {
     const db = await openDB();
     const migrated = await new Promise<boolean>((resolve, reject) => {
@@ -725,6 +728,7 @@ export const DB = {
    */
   getMessagesByCharId: async (charId: string, includeProcessed: boolean = false, sealHomeActions: boolean = false): Promise<Message[]> => {
     const db = await openDB();
+    await ensureStoryTimelineRepair(db);
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_MESSAGES, sealHomeActions ? 'readwrite' : 'readonly');
       const store = transaction.objectStore(STORE_MESSAGES);
@@ -777,6 +781,7 @@ export const DB = {
   // Performance: Load only the most recent N messages for a character
   getRecentMessagesByCharId: async (charId: string, limit: number, includeProcessed: boolean = false): Promise<Message[]> => {
     const db = await openDB();
+    await ensureStoryTimelineRepair(db);
     const hwm = includeProcessed ? 0 : (() => {
         try { return parseInt(localStorage.getItem(`mp_lastMsgId_${charId}`) || '0', 10) || 0; } catch { return 0; }
     })();
@@ -918,6 +923,7 @@ export const DB = {
   // Get all messages for a character from a given message ID onward (for hideBeforeMessageId)
   getMessagesFromId: async (charId: string, fromId: number): Promise<{ messages: Message[], totalCount: number }> => {
     const db = await openDB();
+    await ensureStoryTimelineRepair(db);
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_MESSAGES, 'readonly');
       const store = transaction.objectStore(STORE_MESSAGES);
@@ -952,6 +958,7 @@ export const DB = {
         // request 成功后事务仍可能回滚。主动消息通知和定时任务销账都必须等提交。
         transaction.oncomplete = () => {
             const newId = request.result as number;
+            if (msg.metadata?.source === 'story_theater_memory' && msg.metadata.theaterTimestampVersion !== 1) invalidateStoryTimelineRepair(db);
             // 水位线自愈：新消息的自增 id 必然大于既有一切消息 id，也就必然大于水位线
             // （水位线本身是某条旧消息的 id）。出现 newId ≤ 水位线，说明水位与消息
             // ID 序列不一致（例如清库/恢复后的残留）。镜像已在同事务内清理，提交后
@@ -3954,6 +3961,7 @@ export const DB = {
   ): Promise<Partial<FullBackupData>> => {
       await migrateLegacyWhiteboxPresets(DB);
       const db = await openDB();
+      await ensureStoryTimelineRepair(db);
       
       const getAllFromStore = (storeName: string): Promise<any[]> => {
           if (!db.objectStoreNames.contains(storeName)) {
@@ -4114,6 +4122,7 @@ export const DB = {
       } = {}
   ): Promise<void> => {
       const db = await openDB();
+      invalidateStoryTimelineRepair(db);
       
       const availableStores = [
           STORE_CHARACTERS, STORE_CHAR_GROUPS, STORE_MESSAGES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
@@ -4409,12 +4418,17 @@ export const DB = {
 
       await runSection('聊天记录', data.messages !== undefined, async () => {
           if (!hasStore(STORE_MESSAGES)) return;
-          const isPatchMode = !hasCharacterBackup;
-          if (!isPatchMode) {
-              await clearStore(STORE_MESSAGES);
+          try {
+              const isPatchMode = !hasCharacterBackup;
+              if (!isPatchMode) {
+                  await clearStore(STORE_MESSAGES);
+              }
+              await putItems(STORE_MESSAGES, data.messages || [], '聊天记录', true);
+              data.messages = undefined as any;
+          } finally {
+              // 分批导入中途失败也可能已覆盖旧记录；中途读取建立的缓存必须作废。
+              invalidateStoryTimelineRepair(db);
           }
-          await putItems(STORE_MESSAGES, data.messages || [], '聊天记录', true);
-          data.messages = undefined as any;
       }, data.messages?.length || 0);
 
       await runSection('聊天主题', data.customThemes !== undefined, async () => {
@@ -4828,5 +4842,8 @@ export const DB = {
           data.bankState = undefined as any;
           data.bankDollhouse = undefined as any;
       }, (data.bankState ? 1 : 0) + (data.bankDollhouse ? 1 : 0));
+      // 导入会覆盖相同 ID 的旧记录，不能复用导入前或中途建立的校正缓存。
+      invalidateStoryTimelineRepair(db);
+      await ensureStoryTimelineRepair(db);
   }
 };
