@@ -177,13 +177,15 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             float bangShadow = 1.0 - smoothstep(-.25 - faceAa, -.25 + faceAa, faceField);
             float sweepShadow = 1.0 - smoothstep(faceCut - faceAa, faceCut + faceAa, faceField);
             float faceShadow = max(bangShadow, sweepShadow) * characterCel;
-            inkRoomShade = mix(inkRoomShade, .75, faceShadow);` : material.userData.illustrationFace || material.userData.illustrationSkin ? `
-            // 屏幕空间落影（前发/衣片 → 脸与皮肤）：按主光方向偏移采样剪影蒙版，
-            // 命中处直接压进阴影档，颜色随下方的偏色一起换。无 SDF 的脸部走这条兜底。
+            inkRoomShade = mix(inkRoomShade, .75, faceShadow);` : material.userData.illustrationFace ? `
+            // 屏幕空间落影（前发/衣片 → 脸）：按主光方向偏移采样剪影蒙版，命中处
+            // 直接压进阴影档。无 SDF 的脸部走这条兜底——只在脸部材质生效：
+            // 屏幕空间投影不区分深度，皮肤全身接收会把整个前发剪影投到腿上
+            // （坐姿尤其诡异），所以身体与手都不接收。
             float dropMask = dropShadowEnabled > .5
               ? smoothstep(.35,.65,texture2D(dropShadowMask,(gl_FragCoord.xy/dropShadowScreen)+dropShadowDrop).a)
               : 0.0;
-            inkRoomShade = mix(inkRoomShade, ${material.userData.illustrationFace ? '.80' : '.78'}, dropMask);` : ''}
+            inkRoomShade = mix(inkRoomShade, .80, dropMask);` : ''}
             // 漫反射：阴影色按表面朝向混入天空反弹/地面反弹色，别是单一死色。
             vec3 inkWorldN = normalize(vec3(dot(viewMatrix[0].xyz,normal),dot(viewMatrix[1].xyz,normal),dot(viewMatrix[2].xyz,normal)));
             vec3 inkBounce = mix(roomBounceDown,roomBounceUp,inkWorldN.y*.5+.5);
@@ -202,12 +204,13 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             // 边缘光（脸部不加）：整圈轮廓都有窄硬亮带，受光侧弱、背光侧强，
             // 不挑光位。rim 吃环境反弹与直射色相（保亮度）：白天白亮、夕阳
             // 金粉、夜晚月光蓝紫——有色 rim 暗示灯光的存在，不一味提白。
+            // 亮度整体加重一档：无光源时人物也有一圈可辨识的亮边。
             float inkBack = 1.0 - smoothstep(-.1,.1,dot(normal, normalize(characterLightDirection)));
             float inkGrazing = 1.0 - abs(dot(normal, normalize(vViewPosition)));
-            float inkRim = smoothstep(.58,.66,inkGrazing) * mix(.35,1.0,inkBack);
+            float inkRim = smoothstep(.50,.60,inkGrazing) * mix(.45,1.15,inkBack);
             vec3 inkRimTone = mix(inkBounce, roomSunTint, inkSun*.6);
             inkRimTone /= max(dot(inkRimTone, inkWeights), .56);
-            inkRoom = mix(inkRoom,(inkSkin*1.18+vec3(.04))*inkRimTone,inkRim*characterCel);`}
+            inkRoom = mix(inkRoom,(inkSkin*1.30+vec3(.07))*inkRimTone,inkRim*characterCel);`}
             vec3 outgoingLight = mix(inkPreview,inkRoom,characterRoomEnabled);
             ${eyeMask ? `
             // 眼睛微光：眼底一层若有若无的自发光（夜里「眼里有光」）。
@@ -216,7 +219,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v16-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v17-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;
