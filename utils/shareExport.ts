@@ -282,9 +282,16 @@ export async function savePhotoToGallery(options: SavePhotoOptions): Promise<Sav
             // 默认（非 androidGalleryMode）下这些操作不需要任何存储权限。
             const { path: albumsPath } = await Media.getAlbumsPath();
             const albumDir = `${String(albumsPath).replace(/\/+$/, '')}/SullyOS`;
-            await Media.createAlbum({ name: 'SullyOS' }).catch((error: any) => {
-                if (!/already exists/i.test(String(error?.message || error))) throw error;
-            });
+            // 先查后建：相册已存在时不再 createAlbum——插件对重复创建的报错
+            // 文案随版本漂移（already exists / EEXIST 各不相同），每次都试建
+            // 会让第二次保存起持续报错。查列表失败或建失败都不阻断保存，
+            // 真正的校验交给下面的 savePhoto。
+            let albumExists = false;
+            try {
+                const { albums } = await Media.getAlbums() as { albums?: Array<{ name?: string }> };
+                albumExists = (albums || []).some(album => album?.name === 'SullyOS');
+            } catch { /* 列表读不到就试着创建 */ }
+            if (!albumExists) await Media.createAlbum({ name: 'SullyOS' }).catch(() => {});
             await Media.savePhoto({ path: await blobToDataUrl(blob), albumIdentifier: albumDir, fileName: stem });
             return 'gallery';
         } catch (error) {

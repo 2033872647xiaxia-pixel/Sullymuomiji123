@@ -158,9 +158,9 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             // 锐利（能量场的缓变会把阈值线在屏幕上拉成软带）；能量档只兜底
             // 处理投影区——受影的亮面压回暗档，取两者更暗。
             ${material.userData.illustrationFace ? 'float celBand = 1.0;' : `
-            float inkFacing = dot(normal, normalize(characterLightDirection));
-            float inkFaceAA = max(fwidth(inkFacing)*1.5, .02);
-            float celBand = min(0.70 + 0.30*smoothstep(-inkFaceAA, inkFaceAA, inkFacing),
+            float celFacing = dot(normal, normalize(characterLightDirection));
+            float celFaceAA = max(fwidth(celFacing)*1.5, .02);
+            float celBand = min(0.70 + 0.30*smoothstep(-celFaceAA, celFaceAA, celFacing),
                                 0.70 + 0.30*smoothstep(.43,.47,inkEnergy));`}
             inkRoomShade = mix(inkRoomShade, celBand, characterCel);
             ${material.userData.faceSdf ? `
@@ -216,7 +216,7 @@ export function setCharacterIllustration(root:T.Object3D, enabled=true) {
             `,
           );
         };
-        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v15-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
+        material.customProgramCacheKey = () => cacheKey + '-character-illustration-v16-' + (material.userData.illustrationFace ? (material.userData.eyeMask ? (material.userData.faceSdf ? 'face-sdf-glow' : 'face-glow') : (material.userData.faceSdf ? 'face-sdf' : 'face')) : material.userData.illustrationSkin ? 'skin' : material.userData.illustrationHair ? 'hair' : 'body');
       }
       material.userData.characterIllustration = enabled;
       material.needsUpdate = true;

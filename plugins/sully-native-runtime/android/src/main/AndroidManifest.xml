@@ -28,6 +28,14 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- 实时位置感知（天气定位/用户位置上下文）走 @capacitor/geolocation。
+         插件的 requestPermissions 依赖 manifest 声明这两条权限：ACCESS_COARSE_LOCATION
+         是安装期 normal 权限，未声明时 checkPermissions 直接报 denied 且不弹授权框
+         （插件会抛 "Missing the following permissions in AndroidManifest.xml"）。两条都
+         在此声明，经清单合并进最终 APK。 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application>
         <receiver
             android:name="com.sullyos.nativeruntime.SullyNativeRuntimeBootReceiver"
