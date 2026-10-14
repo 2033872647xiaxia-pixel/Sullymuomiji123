@@ -134,20 +134,26 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
             }else ctx.drawImage(drawable!,0,0,472,472);
             ctx.restore();
         });
-        if((eyes==='sleep'||eyes==='squeeze')&&eyeMaskValid){
-            // 装饰与脸纹层不随表情变化：若把内容画进了眼区（眼白、妆效），
-            // 闭眼贴图下会透出来。按眼罩把眼区重铺肤色（边缘随遮罩渐变），
-            // 再补一遍闭眼笔画。
-            const patch=document.createElement('canvas');patch.width=patch.height=472;
-            const pctx=patch.getContext('2d')!;
-            pctx.drawImage(eyeMaskCanvas,0,0,472,472);
-            pctx.globalCompositeOperation='source-in';
-            pctx.fillStyle=fill??skin;pctx.fillRect(0,0,472,472);
+        if(eyes==='sleep'||eyes==='squeeze'){
+            // 眼区重铺：装饰/面纹层不随表情变化，画进眼区的白色内容（眼白、
+            // 眼妆）会在闭眼贴图下透出。用固定形状的软边椭圆把整个眼部活动
+            // 区域（含眼距/大小微调的可达范围）铺回脸底色——不依赖睁眼遮罩，
+            // 也不管眼罩遮罩是否生成成功；之后分层脸重画素材闭眼图，基础脸
+            // 画程序闭眼笔画。
+            ctx.save();
+            ctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
+            ctx.beginPath();
+            ctx.ellipse(237,272,105,34,0,0,Math.PI*2);
+            try{ctx.filter='blur(5px)';}catch{ /* 老引擎无 filter 时硬边也可接受 */ }
+            ctx.fillStyle=fill??skin;
+            ctx.fill();
+            ctx.filter='none';
+            ctx.restore();
             ctx.save();
             ctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
             ctx.transform(.97,0,0,.96,237*.03,268*.04-8);
-            ctx.drawImage(patch,0,0,472,472);
-            closedEyeStrokes(eyes==='squeeze'?'squeeze':'sleep');
+            if(splitFace&&!faceSettings?.useBaseEyes)ctx.drawImage(splitFace.eyes,0,0,472,472);
+            else closedEyeStrokes(eyes==='squeeze'?'squeeze':'sleep');
             ctx.restore();
         }
         const texture=target??keep(new T.CanvasTexture(canvas));texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;

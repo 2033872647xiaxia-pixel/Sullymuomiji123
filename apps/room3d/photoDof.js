@@ -4,35 +4,35 @@ import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
 // 拍照景深：从屏幕拷贝「成品图」（已含描边、辉光等全部后期），另渲一遍带深度的
 // 场景取深度，成品图三级降采样模糊（1/4 → 1/8 → 1/16），合成时按「像素深度与
 // 焦点深度之差」混合清晰与两级模糊（正交相机深度线性）。仅拍照模式出帧时跑。
-// 两级模糊层按虚化程度交叉过渡：描边等高频深色内容在 1/16 层充分化开，
-// 不再以灰带形态浮在虚化区；bokeh 在 1/4 层做亮点圆盘扩散，随链继续柔化；
-// strength 是模糊半径的整体倍率。
+// 色彩域约定：只有第一级从 sRGB 成品图解码到线性；之后 RT 之间全部线性传递，
+// 最后合成时统一编码回 sRGB——中途任何一级再做解码都会把亮度层层压黑（黑雾）。
+// 两级模糊层按虚化程度交叉过渡：描边等高频深色内容在 1/16 层充分化开；
+// bokeh 在 1/4 层做亮点圆盘扩散，随链继续柔化；strength 是模糊半径的整体倍率。
 export function createPhotoDof(renderer,scene,camera){
  let image=null,depthTarget=null,blurA=null,bokehRT=null,blurB=null,blurC=null,width=0,height=0;const size=new T.Vector2();
  const vertexShader='varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}';
  const blurMaterial=new T.ShaderMaterial({depthTest:false,depthWrite:false,toneMapped:false,
-  uniforms:{image:{value:null},pixel:{value:new T.Vector2()}},
+  uniforms:{image:{value:null},pixel:{value:new T.Vector2()},decode:{value:0}},
   vertexShader,
-  fragmentShader:`varying vec2 vUv;uniform sampler2D image;uniform vec2 pixel;
-   vec3 fetch(vec2 p){return sRGBTransferEOTF(texture2D(image,p)).rgb;}
+  fragmentShader:`varying vec2 vUv;uniform sampler2D image;uniform vec2 pixel;uniform float decode;
+   vec3 fetch(vec2 p){vec3 c=texture2D(image,p).rgb;return decode>.5?sRGBTransferEOTF(c):c;}
    void main(){vec3 c=fetch(vUv);for(int i=0;i<8;i++){float a=float(i)*6.2831853/8.;c+=fetch(vUv+vec2(cos(a),sin(a))*pixel*2.);}gl_FragColor=vec4(c/9.,1.);}`});
  // 光斑：对邻域做圆盘 gather——命中亮点的采样数决定覆盖，天然形成硬边圆盘；
- // 光斑只加进模糊链（blurA 之后），焦点区合成时取清晰图，光斑自动只留在虚化区。
+ // 光斑只加进模糊链（blurA 之后，线性域），焦点区合成时取清晰图，光斑自动只留在虚化区。
  const bokehMaterial=new T.ShaderMaterial({depthTest:false,depthWrite:false,toneMapped:false,
   uniforms:{image:{value:null},pixel:{value:new T.Vector2()},amount:{value:0}},
   vertexShader,
   fragmentShader:`varying vec2 vUv;uniform sampler2D image;uniform vec2 pixel;uniform float amount;
-   vec3 fetch(vec2 p){return sRGBTransferEOTF(texture2D(image,p)).rgb;}
    float lum(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
    void main(){
-    vec3 base=fetch(vUv);
+    vec3 base=texture2D(image,vUv).rgb;
     if(amount<=0.001){gl_FragColor=vec4(base,1.);return;}
     vec3 acc=vec3(0.);float hits=0.;
     for(int i=0;i<24;i++){
      float a=float(i)*6.2831853/24.;
      for(int r=1;r<=4;r++){
       float rr=float(r)/4.;
-      vec3 s=fetch(vUv+vec2(cos(a),sin(a))*pixel*7.*rr);
+      vec3 s=texture2D(image,vUv+vec2(cos(a),sin(a))*pixel*7.*rr).rgb;
       if(lum(s)>.68){acc+=s;hits+=1.;}
      }
     }
@@ -52,8 +52,9 @@ export function createPhotoDof(renderer,scene,camera){
     float coc=smoothstep(.15,1.,clamp(abs(d-focus)/max(range,.001),0.,1.))*clamp(aperture,0.,1.);
     // 两级模糊按虚化程度交叉：轻度虚化用 1/8 层（保住中景结构），
     // 深度虚化过渡到 1/16 层——描边等高频深色内容在此充分化开。
-    vec3 blur=mix(sRGBTransferEOTF(texture2D(blurredNear,vUv)).rgb,sRGBTransferEOTF(texture2D(blurredFar,vUv)).rgb,smoothstep(.3,.8,coc));
-    vec3 c=mix(sRGBTransferEOTF(texture2D(image,vUv)).rgb,blur,coc);
+    // 两层 RT 都已是线性域，直接取值；成品图在此时才解码到线性。
+    vec3 blur=mix(texture2D(blurredNear,vUv).rgb,texture2D(blurredFar,vUv).rgb,smoothstep(.3,.8,coc));
+    vec3 c=mix(sRGBTransferEOTF(texture2D(image,vUv).rgb),blur,coc);
     gl_FragColor=vec4(c,1.);
     #include <colorspace_fragment>
    }`});
@@ -81,8 +82,11 @@ export function createPhotoDof(renderer,scene,camera){
     renderer.copyFramebufferToTexture(image);
     renderer.setRenderTarget(depthTarget);renderer.render(scene,camera);
     const radius=Math.max(.25,strength);
-    blurMaterial.uniforms.image.value=image;blurMaterial.uniforms.pixel.value.set(2/blurA.width*radius,2/blurA.height*radius);
+    // 第一级：从 sRGB 成品图解码到线性；之后各级都在线性域，不再解码。
+    blurMaterial.uniforms.image.value=image;blurMaterial.uniforms.decode.value=1;
+    blurMaterial.uniforms.pixel.value.set(2/blurA.width*radius,2/blurA.height*radius);
     renderer.setRenderTarget(blurA);blurQuad.render(renderer);
+    blurMaterial.uniforms.decode.value=0;
     if(bokeh>0.001){
      bokehMaterial.uniforms.image.value=blurA.texture;bokehMaterial.uniforms.pixel.value.set(1/blurA.width,1/blurA.height);
      bokehMaterial.uniforms.amount.value=bokeh;

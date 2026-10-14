@@ -89,7 +89,10 @@ function streamUrl(voiceId?: string): string {
 }
 
 function appendAlignment(target: VoiceCue[], frame: any, offset: number): void {
-  const alignment = frame.normalized_alignment || frame.alignment;
+  // 字幕要显示的是台词原文：优先用原文对齐（alignment）。normalized_alignment
+  // 是发音归一化序列——日文会被转成片假名/读音字符，字幕与台词对不上；
+  // 原文对齐缺失（部分模型只给归一化版）时才回落。
+  const alignment = frame.alignment || frame.normalized_alignment;
   if (!alignment?.characters) return;
   const chars: unknown[] = alignment.characters;
   chars.forEach((text, i) => {
