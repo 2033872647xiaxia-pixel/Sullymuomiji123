@@ -15,7 +15,9 @@ export function createPhotoDof(renderer,scene,camera){
   uniforms:{image:{value:null},pixel:{value:new T.Vector2()},decode:{value:0}},
   vertexShader,
   fragmentShader:`varying vec2 vUv;uniform sampler2D image;uniform vec2 pixel;uniform float decode;
-   vec3 fetch(vec2 p){vec3 c=texture2D(image,p).rgb;return decode>.5?sRGBTransferEOTF(c):c;}
+   // sRGB→线性：ShaderMaterial 不注入 three 的 colorspace chunk，这里自带一份。
+   vec3 srgbToLinear(vec3 c){return mix(c/12.92,pow((c+.055)/1.055,vec3(2.4)),step(.04045,c));}
+   vec3 fetch(vec2 p){vec3 c=texture2D(image,p).rgb;return decode>.5?srgbToLinear(c):c;}
    void main(){vec3 c=fetch(vUv);for(int i=0;i<8;i++){float a=float(i)*6.2831853/8.;c+=fetch(vUv+vec2(cos(a),sin(a))*pixel*2.);}gl_FragColor=vec4(c/9.,1.);}`});
  // 光斑：对邻域做圆盘 gather——命中亮点的采样数决定覆盖，天然形成硬边圆盘；
  // 光斑只加进模糊链（blurA 之后，线性域），焦点区合成时取清晰图，光斑自动只留在虚化区。
@@ -46,6 +48,7 @@ export function createPhotoDof(renderer,scene,camera){
   uniforms:{image:{value:null},blurredNear:{value:null},blurredFar:{value:null},depth:{value:null},focus:{value:8},aperture:{value:1},range:{value:3},near:{value:.1},far:{value:200}},
   vertexShader,
   fragmentShader:`varying vec2 vUv;uniform sampler2D image;uniform sampler2D blurredNear;uniform sampler2D blurredFar;uniform sampler2D depth;uniform float focus;uniform float aperture;uniform float range;uniform float near;uniform float far;
+   vec3 srgbToLinear(vec3 c){return mix(c/12.92,pow((c+.055)/1.055,vec3(2.4)),step(.04045,c));}
    void main(){
     float z=texture2D(depth,vUv).x;
     float d=near+z*(far-near);
@@ -54,7 +57,7 @@ export function createPhotoDof(renderer,scene,camera){
     // 深度虚化过渡到 1/16 层——描边等高频深色内容在此充分化开。
     // 两层 RT 都已是线性域，直接取值；成品图在此时才解码到线性。
     vec3 blur=mix(texture2D(blurredNear,vUv).rgb,texture2D(blurredFar,vUv).rgb,smoothstep(.3,.8,coc));
-    vec3 c=mix(sRGBTransferEOTF(texture2D(image,vUv).rgb),blur,coc);
+    vec3 c=mix(srgbToLinear(texture2D(image,vUv).rgb),blur,coc);
     gl_FragColor=vec4(c,1.);
     #include <colorspace_fragment>
    }`});

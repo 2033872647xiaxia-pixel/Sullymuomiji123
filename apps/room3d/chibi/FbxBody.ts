@@ -136,18 +136,32 @@ export function buildBody(source: T.Group, sourceParts: Parts, appearance: 'skin
         });
         if(eyes==='sleep'||eyes==='squeeze'){
             // 眼区重铺：装饰/面纹层不随表情变化，画进眼区的白色内容（眼白、
-            // 眼妆）会在闭眼贴图下透出。用固定形状的软边椭圆把整个眼部活动
-            // 区域（含眼距/大小微调的可达范围）铺回脸底色——不依赖睁眼遮罩，
-            // 也不管眼罩遮罩是否生成成功；之后分层脸重画素材闭眼图，基础脸
-            // 画程序闭眼笔画。
+            // 眼妆）会在闭眼贴图下透出。优先用眼罩 alpha 当模板——它是眼睛
+            // 部件的真实绘制范围（含眼距/大小微调、分层脸变换），软边稍扩
+            // 盖住眼妆、不碰眉毛；固定椭圆要么盖不全大眼素材的眼白、要么
+            // 误伤眉毛，只作眼罩缺失时的兜底。
             ctx.save();
             ctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
-            ctx.beginPath();
-            ctx.ellipse(237,272,105,34,0,0,Math.PI*2);
-            try{ctx.filter='blur(5px)';}catch{ /* 老引擎无 filter 时硬边也可接受 */ }
-            ctx.fillStyle=fill??skin;
-            ctx.fill();
-            ctx.filter='none';
+            ctx.transform(.97,0,0,.96,237*.03,268*.04-8);
+            const hasMask=eyeMaskValid||refreshEyeMask();
+            if(hasMask){
+                const patch=document.createElement('canvas');patch.width=patch.height=472;
+                const pctx=patch.getContext('2d')!;
+                pctx.drawImage(eyeMaskCanvas,0,0);
+                pctx.globalCompositeOperation='source-in';
+                pctx.fillStyle=fill??skin;
+                pctx.fillRect(0,0,472,472);
+                try{ctx.filter='blur(4px)';}catch{ /* 老引擎无 filter 时硬边也可接受 */ }
+                ctx.drawImage(patch,0,0);
+                ctx.filter='none';
+            }else{
+                ctx.beginPath();
+                ctx.ellipse(237,272,105,34,0,0,Math.PI*2);
+                try{ctx.filter='blur(5px)';}catch{ /* 老引擎无 filter 时硬边也可接受 */ }
+                ctx.fillStyle=fill??skin;
+                ctx.fill();
+                ctx.filter='none';
+            }
             ctx.restore();
             ctx.save();
             ctx.translate(facePlacement.eyes.x,-facePlacement.eyes.y);
