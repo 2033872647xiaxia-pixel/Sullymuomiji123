@@ -2,6 +2,10 @@
   functions = "netlify/functions"
   publish = "dist"
 
+[build.environment]
+  # Vite 打包 7000+ 模块时默认约 2GB 的堆不够用，会 OOM
+  NODE_OPTIONS = "--max-old-space-size=6144"
+
 [functions]
   node_bundler = "esbuild"
 
